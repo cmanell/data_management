@@ -16,7 +16,7 @@ def load_data():
     df_tranch_age = pd.read_csv("df_tranch_age.csv", sep=",")
     df_tot_age    = pd.read_csv("df_tot_age.csv", sep=",")
     df_sejour     = pd.read_csv("df_sejour.csv", sep=",")
-    df_tableau_1  = pd.read_csv("tableau_1.csv", sep=";")  # Add this line
+    df_tableau_1  = pd.read_csv("tableau_1.csv", sep=";")
     with open("departements.geojson", encoding="utf-8") as f:
         dep_geojson = json.load(f)
     return df_tranch_age, df_tot_age, df_sejour, df_tableau_1, dep_geojson
@@ -39,6 +39,18 @@ st.markdown("---")
 st.sidebar.header("Filtres")
 pathologies = sorted(df_tot_age['Pathologie'].drop_duplicates())
 pathologie_selected = st.sidebar.selectbox("Pathologie :", pathologies, index=0)
+
+# Department selector in sidebar
+df_map_temp = df_tot_age[
+    (df_tot_age["Pathologie"] == pathologie_selected)
+].copy()
+departments = sorted(df_map_temp['Département'].unique())
+selected_dept = st.sidebar.selectbox(
+    "Département :",
+    options=["-- Aucun --"] + departments,
+    key="dept_selector"
+)
+
 years = sorted(df_tot_age['ANNEE'].drop_duplicates())
 year_selected = st.sidebar.selectbox("Année :", years, index=len(years)-1)
 
@@ -48,79 +60,70 @@ year_selected = st.sidebar.selectbox("Année :", years, index=len(years)-1)
 
 st.header("1️⃣ Vue d'ensemble par département")
 
-col1, col2 = st.columns([1, 1])
+# Prepare data for map
+df_map = df_tot_age[
+    (df_tot_age["Pathologie"] == pathologie_selected) & 
+    (df_tot_age["ANNEE"] == year_selected)
+].copy()
 
 # -----------------------------
-# Left panel: Choropleth map
+# Top: Choropleth map (full width)
 # -----------------------------
 
-with col1:
-    st.subheader("Carte interactive")
+st.subheader("Carte interactive")
+
+fig_map = px.choropleth(
+    df_map,
+    geojson=dep_geojson,
+    locations="dep_code",
+    featureidkey="properties.code",
+    color="nbr recours",
+    color_continuous_scale="Blues",
+    range_color=(0, df_map["nbr recours"].max()),
+    labels={"nbr recours": "Taux de recours"},
+    hover_name="Département",
+    hover_data={"Pathologie": True, "Département": False, "dep_code": False}
+)
+
+fig_map.update_geos(fitbounds="locations", visible=False)
+fig_map.update_layout(
+    title=f"Taux de recours - {pathologie_selected}",
+    margin={"r": 0, "t": 40, "l": 0, "b": 0},
+    height=500
+)
+
+st.plotly_chart(fig_map, use_container_width=True, key="choropleth_map")
+
+# -----------------------------
+# Bottom: Sex and Age charts side by side
+# -----------------------------
+
+st.subheader("Détails par département")
+
+if selected_dept and selected_dept != "-- Aucun --":
+    # Get department info
+    dept_info = df_map[df_map["Département"] == selected_dept].iloc[0]
+    dep_code = dept_info["dep_code"]
+    dep_name = dept_info["Département"]
     
-    df_map = df_tot_age[
-        (df_tot_age["Pathologie"] == pathologie_selected) & 
+    st.markdown(f"**Département sélectionné :** {dep_name} (`{dep_code}`)")
+    
+    # Filter the data (ONLY ONCE)
+    df_tot_age_filt = df_tot_age[
+        (df_tot_age["dep_code"] == dep_code) &
+        (df_tot_age["Pathologie"] == pathologie_selected) &
         (df_tot_age["ANNEE"] == year_selected)
-    ].copy()
-
-    fig_map = px.choropleth(
-        df_map,
-        geojson=dep_geojson,
-        locations="dep_code",
-        featureidkey="properties.code",
-        color="nbr recours",
-        color_continuous_scale="Blues",
-        range_color=(0, df_map["nbr recours"].max()),
-        labels={"nbr recours": "Taux de recours"},
-        hover_name="Département",
-        hover_data={"Pathologie": True, "Département": False, "dep_code": False}
-    )
-
-    fig_map.update_geos(fitbounds="locations", visible=False)
-    fig_map.update_layout(
-        title=f"Taux de recours - {pathologie_selected}",
-        margin={"r": 0, "t": 40, "l": 0, "b": 0},
-        height=500
-    )
-
-    # Display the map using standard st.plotly_chart
-    st.plotly_chart(fig_map, use_container_width=True, key="choropleth_map")
+    ]
     
-    # Add a selectbox as fallback for department selection
-    st.markdown("**Sélectionner un département :**")
-    departments = sorted(df_map['Département'].unique())
-    selected_dept = st.selectbox(
-        "Choisir un département",
-        options=["-- Aucun --"] + departments,
-        key="dept_selector"
-    )
+    # Add total case count
+    total_cases = df_tot_age_filt["nbr recours"].sum()
+    st.metric("Nombre total de cas", f"{total_cases:,.0f}")
 
-# -----------------------------
-# Right panel: Detailed charts
-# -----------------------------
-
-with col2:
-    st.subheader("Détails par département")
-
-    if selected_dept and selected_dept != "-- Aucun --":
-        # Get department info
-        dept_info = df_map[df_map["Département"] == selected_dept].iloc[0]
-        dep_code = dept_info["dep_code"]
-        dep_name = dept_info["Département"]
-        
-        st.markdown(f"**Département sélectionné :** {dep_name} (`{dep_code}`)")
-        
-        # Filter the data (ONLY ONCE)
-        df_tot_age_filt = df_tot_age[
-            (df_tot_age["dep_code"] == dep_code) &
-            (df_tot_age["Pathologie"] == pathologie_selected) &
-            (df_tot_age["ANNEE"] == year_selected)
-        ]
-        
-        # Add total case count
-        total_cases = df_tot_age_filt["nbr recours"].sum()
-        st.metric("Nombre total de cas", f"{total_cases:,.0f}")
-
-        # Sex distribution
+    # Create two columns for sex and age charts
+    col1, col2 = st.columns(2)
+    
+    # Sex distribution
+    with col1:
         if not df_tot_age_filt.empty:
             df_sex = df_tot_age_filt.groupby("SEXE")["nbr recours"].sum().reset_index()
             df_sex['pct'] = (df_sex['nbr recours'] / df_sex['nbr recours'].sum() * 100).round(1)
@@ -131,10 +134,11 @@ with col2:
                 title="Répartition par sexe"
             )
             fig_sex.update_traces(texttemplate='%{text:.1f}%', textposition='outside', width=0.3)
-            fig_sex.update_layout(height=300, showlegend=False)
+            fig_sex.update_layout(height=450, showlegend=False)
             st.plotly_chart(fig_sex, use_container_width=True)
 
-        # Age distribution
+    # Age distribution
+    with col2:
         df_tranch_filt = df_tranch_age[
             (df_tranch_age["dep_code"] == dep_code) &
             (df_tranch_age["Pathologie"] == pathologie_selected) &
@@ -152,12 +156,12 @@ with col2:
             )
             fig_age.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
             fig_age.update_yaxes(range=[0, df_age['nbr recours'].max() * 1.15])
-            fig_age.update_layout(height=300, showlegend=False)
+            fig_age.update_layout(height=450, showlegend=False)
             st.plotly_chart(fig_age, use_container_width=True)
         else:
             st.info("Pas de données détaillées pour ce département.")
-    else:
-        st.info("👈 Sélectionnez un département dans la liste pour voir les détails.")
+else:
+    st.info("👈 Sélectionnez un département dans la barre latérale pour voir les détails.")
 
 
 # =============================
@@ -178,70 +182,68 @@ if selected_dept and selected_dept != "-- Aucun --":
     ]
     
     if not df_sejour_filt.empty:
-        col_a, col_b = st.columns(2)
+        st.subheader("Distribution des durées")
+        fig_sejour = px.bar(
+            df_sejour_filt, x="Durée séjour", y="Nombre séjours",
+            color="Durée séjour", text="ratio durée du séjour",
+            labels={"Nombre séjours": "Nombre de séjours", "Durée séjour": "Durée (jours)"}
+        )
+        fig_sejour.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
+        fig_sejour.update_layout(height=450)
+        st.plotly_chart(fig_sejour, use_container_width=True)
         
-        with col_a:
-            st.subheader("Distribution des durées")
-            fig_sejour = px.bar(
-                df_sejour_filt, x="Durée séjour", y="Nombre séjours",
-                color="Durée séjour", text="ratio durée du séjour",
-                labels={"Nombre séjours": "Nombre de séjours", "Durée séjour": "Durée (jours)"}
-            )
-            fig_sejour.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
-            st.plotly_chart(fig_sejour, use_container_width=True)
+        st.subheader("Distribution normale théorique")
+        x = df_sejour_filt["Durée_num"]
+        w = df_sejour_filt["Nombre séjours"]
 
-        with col_b:
-            st.subheader("Distribution normale théorique")
-            x = df_sejour_filt["Durée_num"]
-            w = df_sejour_filt["Nombre séjours"]
+        mu = np.average(x, weights=w)
+        sigma = np.sqrt(np.average((x - mu) ** 2, weights=w))
 
-            mu = np.average(x, weights=w)
-            sigma = np.sqrt(np.average((x - mu) ** 2, weights=w))
+        x_curve = np.linspace(min(x), max(x), 300)
+        y_curve = norm.pdf(x_curve, mu, sigma)
+        y_curve = y_curve * w.sum() / y_curve.sum()
 
-            x_curve = np.linspace(min(x), max(x), 300)
-            y_curve = norm.pdf(x_curve, mu, sigma)
-            y_curve = y_curve * w.sum() / y_curve.sum()
+        fig_gauss = go.Figure()
 
-            fig_gauss = go.Figure()
+        fig_gauss.add_trace(go.Scatter(
+            x=np.concatenate([x_curve, x_curve[::-1]]),
+            y=np.concatenate([y_curve, np.zeros_like(y_curve)]),
+            fill='toself',
+            fillcolor='rgba(173,216,230,0.3)',
+            line=dict(color='rgba(0,0,0,0)'),
+            showlegend=False
+        ))
 
-            fig_gauss.add_trace(go.Scatter(
-                x=np.concatenate([x_curve, x_curve[::-1]]),
-                y=np.concatenate([y_curve, np.zeros_like(y_curve)]),
-                fill='toself',
-                fillcolor='rgba(173,216,230,0.3)',
-                line=dict(color='rgba(0,0,0,0)'),
-                showlegend=False
-            ))
+        fig_gauss.add_trace(go.Scatter(
+            x=x_curve, y=y_curve,
+            mode="lines",
+            name="Courbe normale",
+            line=dict(color="blue", width=3)
+        ))
 
-            fig_gauss.add_trace(go.Scatter(
-                x=x_curve, y=y_curve,
-                mode="lines",
-                name="Courbe normale",
-                line=dict(color="blue", width=3)
-            ))
+        fig_gauss.add_vline(x=mu, line_dash="dash", line_color="red")
+        fig_gauss.add_vline(x=mu + sigma, line_dash="dot", line_color="orange")
 
-            fig_gauss.add_vline(x=mu, line_dash="dash", line_color="red")
-            fig_gauss.add_vline(x=mu + sigma, line_dash="dot", line_color="orange")
+        fig_gauss.add_annotation(
+            x=mu, y=max(y_curve) * 0.95,
+            text=f"µ = {mu:.2f} j",
+            showarrow=False,
+            font=dict(color="red", size=14)
+        )
+        fig_gauss.add_annotation(
+            x=mu + sigma, y=max(y_curve) * 0.85,
+            text=f"µ + σ = {mu + sigma:.2f} j",
+            showarrow=False,
+            font=dict(color="orange", size=14)
+        )
 
-            fig_gauss.add_annotation(
-                x=mu, y=max(y_curve) * 0.95,
-                text=f"µ = {mu:.2f} j",
-                showarrow=False,
-                font=dict(color="red", size=14)
-            )
-            fig_gauss.add_annotation(
-                x=mu + sigma, y=max(y_curve) * 0.85,
-                text=f"µ + σ = {mu + sigma:.2f} j",
-                showarrow=False,
-                font=dict(color="orange", size=14)
-            )
-
-            fig_gauss.update_layout(
-                xaxis_title="Durée du séjour (jours)",
-                yaxis_title="Fréquence normalisée",
-                template="plotly_white"
-            )
-            st.plotly_chart(fig_gauss, use_container_width=True)
+        fig_gauss.update_layout(
+            xaxis_title="Durée du séjour (jours)",
+            yaxis_title="Fréquence normalisée",
+            template="plotly_white",
+            height=450
+        )
+        st.plotly_chart(fig_gauss, use_container_width=True)
     else:
         st.info("Pas de données de durée de séjour disponibles.")
 
@@ -447,7 +449,7 @@ elif chart_option == "Analyse de risque (Âge vs Pathologie)":
     
     with st.expander("📊 Voir le détail des calculs étape par étape"):
         st.markdown("""
-        ### Exemple stset (fictif pour le Diabète) :
+        ### Exemple concret (fictif pour le Diabète) :
         
         **Étape 1 : Calculer les totaux par tranche d'âge**
         ```
@@ -626,15 +628,17 @@ elif chart_option == "Analyse de risque (Département vs Pathologie)":
     fig_height = max(400, num_depts * 20)  # Minimum 400px, 20px per department
     
     fig = px.bar(
-        df_selected, x="Département", y="Écart à la moyenne",
+        df_selected, y="Département", x="Écart à la moyenne",
         color="Couleur",
         color_discrete_map=color_map,
         labels={"Écart à la moyenne": "Écart à la moyenne nationale (%)"},
-        title=f"Écart de prévalence par département - {pathologie_selected}"
+        title=f"Écart de prévalence par département - {pathologie_selected}",
+        orientation='h'
     )
-    fig.update_xaxes(tickangle=45)
-    fig.add_hline(y=0, line_dash="dash", line_color="gray", 
-                  annotation_text=f"Moyenne nationale: {national_avg:.2f}%")
+    fig.update_yaxes(tickangle=0)
+    fig.add_vline(x=0, line_dash="dash", line_color="gray", 
+                  annotation_text=f"Moyenne nationale: {national_avg:.2f}%",
+                  annotation_position="top right")
     fig.update_layout(height=fig_height)
     st.plotly_chart(fig, use_container_width=True)
     

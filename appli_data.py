@@ -326,13 +326,49 @@ elif chart_option == "Total par département":
     fig.update_xaxes(tickangle=45)
     st.plotly_chart(fig, use_container_width=True)
 
-
-
-    # -----------------------------
+# -----------------------------
 # RISK ANALYSIS: SEX vs PATHOLOGY
 # -----------------------------
 elif chart_option == "Analyse de risque (Sexe vs Pathologie)":
     st.subheader(f"Analyse de risque : Sexe vs Pathologie ({year_selected})")
+    
+    st.markdown("""
+    **Méthode de calcul :**
+    - Pour chaque sexe : % = (cas de la pathologie) / (total des cas) × 100
+    - Différence = % Hommes - % Femmes
+    - Valeur positive → plus fréquent chez les hommes
+    - Valeur négative → plus fréquent chez les femmes
+    """)
+    
+    with st.expander("📊 Voir le détail des calculs étape par étape"):
+        st.markdown("""
+        ### Exemple concret :
+        
+        **Étape 1 : Calculer les totaux par sexe**
+        ```
+        Hommes : Diabète (1000) + Maladies cardio (2000) + Cancer (1500) = 4500 cas totaux
+        Femmes : Diabète (1500) + Maladies cardio (1800) + Cancer (1200) = 4500 cas totaux
+        ```
+        
+        **Étape 2 : Calculer le pourcentage pour chaque pathologie**
+        ```
+        % Diabète chez Hommes = (1000 / 4500) × 100 = 22.22%
+        % Diabète chez Femmes = (1500 / 4500) × 100 = 33.33%
+        ```
+        
+        **Étape 3 : Calculer la différence**
+        ```
+        Différence = 22.22% - 33.33% = -11.11%
+        
+        Interprétation : Le diabète est 11.11% MOINS fréquent chez les hommes
+        (ou 11.11% PLUS fréquent chez les femmes)
+        ```
+        
+        ### Pourquoi cette méthode ?
+        
+        Elle permet de comparer l'impact relatif de chaque pathologie sur chaque sexe,
+        indépendamment du nombre total de cas.
+        """)
     
     # Calculate total cases by sex and pathology
     df_risk = df_tot_age[df_tot_age["ANNEE"] == year_selected].groupby(
@@ -397,6 +433,47 @@ elif chart_option == "Analyse de risque (Sexe vs Pathologie)":
 elif chart_option == "Analyse de risque (Âge vs Pathologie)":
     st.subheader(f"Analyse de risque : Âge vs Pathologie ({year_selected})")
     
+    st.markdown("""
+    **Méthode de calcul :**
+    - Pour chaque tranche d'âge : % = (cas de la pathologie) / (total des cas dans la tranche) × 100
+    - Montre quelle proportion des problèmes de santé est représentée par la pathologie sélectionnée
+    - Permet d'identifier les tranches d'âge les plus touchées
+    """)
+    
+    with st.expander("📊 Voir le détail des calculs étape par étape"):
+        st.markdown("""
+        ### Exemple concret pour le Diabète :
+        
+        **Étape 1 : Calculer les totaux par tranche d'âge**
+        ```
+        Tranche 5-14 ans : Diabète (100) + Asthme (50) + Fractures (30) = 180 cas totaux
+        Tranche 65-74 ans : Diabète (800) + Cardio (1200) + Cancer (600) = 2600 cas totaux
+        ```
+        
+        **Étape 2 : Calculer le pourcentage**
+        ```
+        % Diabète chez 5-14 ans = (100 / 180) × 100 = 55.56%
+        % Diabète chez 65-74 ans = (800 / 2600) × 100 = 30.77%
+        ```
+        
+        **Interprétation :**
+        ```
+        Chez les 5-14 ans : Le diabète représente 55.56% de tous leurs problèmes de santé
+        Chez les 65-74 ans : Le diabète représente 30.77% de tous leurs problèmes de santé
+        
+        Même si les 65-74 ans ont PLUS de cas de diabète en absolu (800 vs 100),
+        le diabète est proportionnellement PLUS important chez les jeunes (55.56% vs 30.77%)
+        car les jeunes ont moins d'autres problèmes de santé.
+        ```
+        
+        ### La heatmap (carte de chaleur)
+        
+        Montre ces pourcentages pour toutes les pathologies en même temps :
+        - Couleurs foncées = prévalence élevée dans cette tranche d'âge
+        - Couleurs claires = prévalence faible
+        - Permet d'identifier rapidement les pathologies spécifiques à certains âges
+        """)
+    
     # Calculate cases by age and pathology
     df_risk = df_tranch_age[df_tranch_age["ANNEE"] == year_selected].groupby(
         ["Tranche d'age", "Pathologie"]
@@ -447,6 +524,62 @@ elif chart_option == "Analyse de risque (Âge vs Pathologie)":
 # -----------------------------
 elif chart_option == "Analyse de risque (Département vs Pathologie)":
     st.subheader(f"Analyse de risque : Département vs Pathologie ({year_selected})")
+    
+    st.markdown("""
+    **Méthode de calcul :**
+    - Pour chaque département : % = (cas de la pathologie) / (total des cas du département) × 100
+    - Moyenne nationale = moyenne de tous les % départementaux
+    - Écart = % du département - Moyenne nationale
+    - Permet d'identifier les variations géographiques (facteurs environnementaux, démographiques, etc.)
+    """)
+    
+    with st.expander("📊 Voir le détail des calculs étape par étape"):
+        st.markdown("""
+        ### Étapes du calcul :
+        
+        **Étape 1 : Agrégation des données**
+        ```
+        Pour chaque département et pathologie, sommer tous les recours
+        Exemple : Ain + Diabète sucré = 500 cas
+        ```
+        
+        **Étape 2 : Calcul du total par département**
+        ```
+        Total Ain = Diabète (500) + Maladies cardio (800) + Cancer (300) = 1600 cas
+        ```
+        
+        **Étape 3 : Calcul du pourcentage**
+        ```
+        % Ain pour Diabète = (500 / 1600) × 100 = 31.25%
+        
+        Interprétation : Le diabète représente 31.25% de tous les cas hospitaliers dans l'Ain
+        ```
+        
+        **Étape 4 : Calcul de la moyenne nationale**
+        ```
+        Moyenne nationale = (% Ain + % Aisne + % Allier + ... ) / nombre de départements
+        Exemple : (31.25 + 40.00 + 25.00 + ...) / 96 = 32.50%
+        ```
+        
+        **Étape 5 : Calcul de l'écart**
+        ```
+        Écart Ain = 31.25% - 32.50% = -1.25%
+        Écart Aisne = 40.00% - 32.50% = +7.50%
+        
+        Interprétation :
+        - Ain : 1.25% EN DESSOUS de la moyenne (moins de diabète que la moyenne nationale)
+        - Aisne : 7.50% AU DESSUS de la moyenne (plus de diabète que la moyenne nationale)
+        ```
+        
+        ### Pourquoi utiliser des pourcentages plutôt que des nombres absolus ?
+        
+        Les départements ont des populations et des nombres de cas très différents :
+        - Paris : 10,000 cas totaux, 3,000 diabète = 30%
+        - Lozère : 500 cas totaux, 150 diabète = 30%
+        
+        Même si Paris a 20× plus de cas en absolu, les deux départements ont la **même prévalence relative** (30%).
+        Cela permet une comparaison juste entre petits et grands départements.
+        """)
     
     # Calculate cases by department and pathology
     df_risk = df_tot_age[df_tot_age["ANNEE"] == year_selected].groupby(

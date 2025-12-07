@@ -259,9 +259,9 @@ chart_option = st.selectbox(
         "Répartition par sexe (France)",
         "Répartition par âge (France)",
         "Total par département",
-        "Test du Chi² (Sexe vs Pathologie)",
-        "Test du Chi² (Âge vs Pathologie)",
-        "Test du Chi² (Département vs Pathologie)"
+        "Analyse de risque (Sexe vs Pathologie)",
+        "Analyse de risque (Âge vs Pathologie)",
+        "Analyse de risque (Département vs Pathologie)"
     ],
     key="analysis_selector"
 )
@@ -326,181 +326,185 @@ elif chart_option == "Total par département":
     fig.update_xaxes(tickangle=45)
     st.plotly_chart(fig, use_container_width=True)
 
+
+
+    # -----------------------------
+# RISK ANALYSIS: SEX vs PATHOLOGY
 # -----------------------------
-# CHI-SQUARED TESTS
-# -----------------------------
-elif chart_option.startswith("Test du Chi²"):
-    st.subheader(f"{chart_option} ({year_selected})")
+elif chart_option == "Analyse de risque (Sexe vs Pathologie)":
+    st.subheader(f"Analyse de risque : Sexe vs Pathologie ({year_selected})")
     
-    # Explanation box
-    with st.expander("ℹ️ Qu'est-ce que le test du Chi² ?"):
+    # Calculate total cases by sex and pathology
+    df_risk = df_tot_age[df_tot_age["ANNEE"] == year_selected].groupby(
+        ["SEXE", "Pathologie"]
+    )["nbr recours"].sum().reset_index()
+    
+    # Calculate total for each sex
+    df_sex_total = df_risk.groupby("SEXE")["nbr recours"].sum().reset_index()
+    df_sex_total.columns = ["SEXE", "total_sexe"]
+    
+    # Merge to get percentages
+    df_risk = df_risk.merge(df_sex_total, on="SEXE")
+    df_risk["percentage"] = (df_risk["nbr recours"] / df_risk["total_sexe"] * 100).round(2)
+    
+    # Pivot for comparison
+    df_pivot = df_risk.pivot(index="Pathologie", columns="SEXE", values="percentage").reset_index()
+    
+    if "Homme" in df_pivot.columns and "Femme" in df_pivot.columns:
+        df_pivot["Différence (H-F)"] = df_pivot["Homme"] - df_pivot["Femme"]
+        df_pivot = df_pivot.sort_values("Différence (H-F)", ascending=False)
+        
+        # Highlight selected pathology
+        df_pivot["Couleur"] = df_pivot["Pathologie"].apply(
+            lambda x: "Sélectionné" if x == pathologie_selected else "Autre"
+        )
+        
+        fig = px.bar(
+            df_pivot, x="Pathologie", y="Différence (H-F)",
+            color="Couleur",
+            color_discrete_map={"Sélectionné": "#FF6B6B", "Autre": "#4ECDC4"},
+            labels={"Différence (H-F)": "Différence de risque (% Hommes - % Femmes)"},
+            title="Différence de prévalence entre hommes et femmes par pathologie"
+        )
+        fig.update_xaxes(tickangle=45)
+        fig.add_hline(y=0, line_dash="dash", line_color="gray")
+        st.plotly_chart(fig, use_container_width=True)
+        
         st.markdown("""
-        ### Le Test du Chi² (Chi-carré) d'indépendance
-        
-        **Objectif :** Déterminer s'il existe une relation statistiquement significative entre deux variables catégorielles.
-        
-        **Comment ça marche ?**
-        1. On compare les fréquences **observées** (les données réelles) aux fréquences **attendues** (si les variables étaient indépendantes)
-        2. Le Chi² mesure l'écart entre ces deux distributions
-        3. La **p-value** indique la probabilité que cet écart soit dû au hasard
-        
         **Interprétation :**
-        - **p < 0.05** : Les variables sont **liées** (relation significative) ✔️
-        - **p ≥ 0.05** : Les variables sont **indépendantes** (pas de relation) ❌
-        
-        **Exemple :** 
-        - Si le test Sexe vs Pathologie est significatif, cela signifie que certaines pathologies affectent différemment les hommes et les femmes.
-        - Si p = 0.001, il y a seulement 0.1% de chance que cette différence soit due au hasard.
+        - Valeurs positives : pathologie plus fréquente chez les hommes
+        - Valeurs négatives : pathologie plus fréquente chez les femmes
+        - La pathologie sélectionnée est mise en évidence en rouge
         """)
+        
+        # Show detailed table for selected pathology
+        selected_row = df_pivot[df_pivot["Pathologie"] == pathologie_selected]
+        if not selected_row.empty:
+            st.markdown(f"**Détails pour {pathologie_selected} :**")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("% Hommes", f"{selected_row['Homme'].values[0]:.2f}%")
+            with col2:
+                st.metric("% Femmes", f"{selected_row['Femme'].values[0]:.2f}%")
+            with col3:
+                diff = selected_row['Différence (H-F)'].values[0]
+                st.metric("Différence", f"{diff:.2f}%", 
+                         delta=None if abs(diff) < 1 else ("Plus fréquent chez hommes" if diff > 0 else "Plus fréquent chez femmes"))
+
+# -----------------------------
+# RISK ANALYSIS: AGE vs PATHOLOGY
+# -----------------------------
+elif chart_option == "Analyse de risque (Âge vs Pathologie)":
+    st.subheader(f"Analyse de risque : Âge vs Pathologie ({year_selected})")
     
-    st.markdown("---")
+    # Calculate cases by age and pathology
+    df_risk = df_tranch_age[df_tranch_age["ANNEE"] == year_selected].groupby(
+        ["Tranche d'age", "Pathologie"]
+    )["nbr recours"].sum().reset_index()
     
-    # -----------------------------
-    # SEX VS PATHOLOGY
-    # -----------------------------
-    if chart_option == "Test du Chi² (Sexe vs Pathologie)":
-        st.subheader("Sexe vs Pathologie")
-        st.info("Ce test détermine si certaines pathologies affectent différemment les hommes et les femmes.")
-        
-        # Filter data
-        df_filtered = df_tableau_1[
-            (df_tableau_1["ANNEE"] == year_selected) &
-            (~df_tableau_1["SEXE"].str.contains("Ensemble", na=False))
-        ].copy()
-        
-        # Convert to numeric
-        df_filtered['ind_freq'] = pd.to_numeric(df_filtered['ind_freq'], errors='coerce')
-        df_filtered = df_filtered.dropna(subset=['ind_freq'])
-        
-        # Clean pathology names (remove codes)
-        df_filtered['PATHOLOGIE_CLEAN'] = df_filtered['PATHOLOGIE'].str.replace(r'^\d+-', '', regex=True)
-        
-        if not df_filtered.empty:
-            # Create contingency table
-            cont_table = df_filtered.pivot_table(
-                index="SEXE",
-                columns="PATHOLOGIE_CLEAN",
-                values="ind_freq",
-                aggfunc="sum"
-            ).fillna(0)
-            
-            if cont_table.shape[0] > 1 and cont_table.shape[1] > 1:
-                chi2, p, dof, expected = chi2_contingency(cont_table)
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Chi²", f"{chi2:.2f}")
-                col2.metric("p-value", f"{p:.2e}")
-                col3.metric("Degrés de liberté", dof)
-                
-                if p < 0.05:
-                    st.success("✔️ **Résultat significatif** : Le sexe et la pathologie sont statistiquement liés (p < 0.05)")
-                    st.markdown("**Interprétation :** Certaines pathologies affectent significativement plus un sexe que l'autre.")
-                else:
-                    st.info("ℹ️ **Pas de lien significatif** : Le sexe et la pathologie semblent indépendants (p ≥ 0.05)")
-                
-                if st.checkbox("Afficher la table de contingence", key="chi_sex_patho"):
-                    st.dataframe(cont_table.style.format("{:.0f}"))
-            else:
-                st.warning("⚠️ Données insuffisantes pour effectuer le test du Chi².")
-        else:
-            st.warning("⚠️ Aucune donnée disponible.")
+    # Calculate total for each age group
+    df_age_total = df_risk.groupby("Tranche d'age")["nbr recours"].sum().reset_index()
+    df_age_total.columns = ["Tranche d'age", "total_age"]
     
-    # -----------------------------
-    # AGE VS PATHOLOGY
-    # -----------------------------
-    elif chart_option == "Test du Chi² (Âge vs Pathologie)":
-        st.subheader("Âge vs Pathologie")
-        st.info("Ce test détermine si certaines pathologies sont plus fréquentes dans certaines tranches d'âge.")
-        
-        # Filter data
-        df_filtered = df_tableau_1[
-            (df_tableau_1["ANNEE"] == year_selected) &
-            (~df_tableau_1["Tranche d'age"].str.contains("Ensemble|Tous", na=False, case=False))
-        ].copy()
-        
-        # Convert to numeric
-        df_filtered['ind_freq'] = pd.to_numeric(df_filtered['ind_freq'], errors='coerce')
-        df_filtered = df_filtered.dropna(subset=['ind_freq'])
-        
-        # Clean pathology names (remove codes)
-        df_filtered['PATHOLOGIE_CLEAN'] = df_filtered['PATHOLOGIE'].str.replace(r'^\d+-', '', regex=True)
-        
-        if not df_filtered.empty:
-            # Create contingency table
-            cont_table = df_filtered.pivot_table(
-                index="Tranche d'age",
-                columns="PATHOLOGIE_CLEAN",
-                values="ind_freq",
-                aggfunc="sum"
-            ).fillna(0)
-            
-            if cont_table.shape[0] > 1 and cont_table.shape[1] > 1:
-                chi2, p, dof, expected = chi2_contingency(cont_table)
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Chi²", f"{chi2:.2f}")
-                col2.metric("p-value", f"{p:.2e}")
-                col3.metric("Degrés de liberté", dof)
-                
-                if p < 0.05:
-                    st.success("✔️ **Résultat significatif** : L'âge et la pathologie sont statistiquement liés (p < 0.05)")
-                    st.markdown("**Interprétation :** Certaines pathologies sont significativement plus fréquentes dans certaines tranches d'âge.")
-                else:
-                    st.info("ℹ️ **Pas de lien significatif** : L'âge et la pathologie semblent indépendants (p ≥ 0.05)")
-                
-                if st.checkbox("Afficher la table de contingence", key="chi_age_patho"):
-                    st.dataframe(cont_table.style.format("{:.0f}"))
-            else:
-                st.warning("⚠️ Données insuffisantes pour effectuer le test du Chi².")
-        else:
-            st.warning("⚠️ Aucune donnée disponible.")
+    # Merge and calculate percentages
+    df_risk = df_risk.merge(df_age_total, on="Tranche d'age")
+    df_risk["percentage"] = (df_risk["nbr recours"] / df_risk["total_age"] * 100).round(2)
     
-    # -----------------------------
-    # DEPARTMENT VS PATHOLOGY
-    # -----------------------------
-    elif chart_option == "Test du Chi² (Département vs Pathologie)":
-        st.subheader("Département vs Pathologie")
-        st.info("Ce test détermine si certaines pathologies ont une distribution géographique particulière.")
-        
-        # Filter data
-        df_filtered = df_tableau_1[
-            (df_tableau_1["ANNEE"] == year_selected)
-        ].copy()
-        
-        # Convert to numeric
-        df_filtered['ind_freq'] = pd.to_numeric(df_filtered['ind_freq'], errors='coerce')
-        df_filtered = df_filtered.dropna(subset=['ind_freq'])
-        
-        # Clean pathology names (remove codes)
-        df_filtered['PATHOLOGIE_CLEAN'] = df_filtered['PATHOLOGIE'].str.replace(r'^\d+-', '', regex=True)
-        
-        if not df_filtered.empty:
-            # Create contingency table
-            cont_table = df_filtered.pivot_table(
-                index="ZONE",
-                columns="PATHOLOGIE_CLEAN",
-                values="ind_freq",
-                aggfunc="sum"
-            ).fillna(0)
-            
-            if cont_table.shape[0] > 1 and cont_table.shape[1] > 1:
-                chi2, p, dof, expected = chi2_contingency(cont_table)
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Chi²", f"{chi2:.2f}")
-                col2.metric("p-value", f"{p:.2e}")
-                col3.metric("Degrés de liberté", dof)
-                
-                if p < 0.05:
-                    st.success("✔️ **Résultat significatif** : Le département et la pathologie sont statistiquement liés (p < 0.05)")
-                    st.markdown("**Interprétation :** Certaines pathologies ont une distribution géographique particulière (facteurs environnementaux, démographiques, etc.).")
-                else:
-                    st.info("ℹ️ **Pas de lien significatif** : Le département et la pathologie semblent indépendants (p ≥ 0.05)")
-                
-                if st.checkbox("Afficher la table de contingence", key="chi_dept_patho"):
-                    st.dataframe(cont_table.style.format("{:.0f}"))
-            else:
-                st.warning("⚠️ Données insuffisantes pour effectuer le test du Chi².")
-        else:
-            st.warning("⚠️ Aucune donnée disponible.")
-                
+    # Filter for selected pathology
+    df_selected = df_risk[df_risk["Pathologie"] == pathologie_selected]
+    
+    fig = px.bar(
+        df_selected, x="Tranche d'age", y="percentage",
+        color="Tranche d'age",
+        text="percentage",
+        labels={"percentage": "% des cas dans la tranche d'âge"},
+        title=f"Distribution du risque par tranche d'âge - {pathologie_selected}"
+    )
+    fig.update_traces(texttemplate='%{text:.2f}%', textposition="outside")
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Heatmap for all pathologies
+    st.markdown("**Comparaison entre toutes les pathologies :**")
+    df_heatmap = df_risk.pivot(index="Pathologie", columns="Tranche d'age", values="percentage")
+    
+    fig_heat = px.imshow(
+        df_heatmap,
+        labels=dict(x="Tranche d'âge", y="Pathologie", color="% de prévalence"),
+        aspect="auto",
+        color_continuous_scale="Blues"
+    )
+    fig_heat.update_xaxes(side="bottom")
+    st.plotly_chart(fig_heat, use_container_width=True)
+    
+    st.markdown("""
+    **Interprétation :**
+    - Les couleurs plus foncées indiquent une prévalence plus élevée
+    - Permet d'identifier les pathologies spécifiques à certaines tranches d'âge
+    """)
+
+# -----------------------------
+# RISK ANALYSIS: DEPARTMENT vs PATHOLOGY
+# -----------------------------
+elif chart_option == "Analyse de risque (Département vs Pathologie)":
+    st.subheader(f"Analyse de risque : Département vs Pathologie ({year_selected})")
+    
+    # Calculate cases by department and pathology
+    df_risk = df_tot_age[df_tot_age["ANNEE"] == year_selected].groupby(
+        ["Département", "Pathologie"]
+    )["nbr recours"].sum().reset_index()
+    
+    # Calculate total for each department
+    df_dept_total = df_risk.groupby("Département")["nbr recours"].sum().reset_index()
+    df_dept_total.columns = ["Département", "total_dept"]
+    
+    # Merge and calculate percentages
+    df_risk = df_risk.merge(df_dept_total, on="Département")
+    df_risk["percentage"] = (df_risk["nbr recours"] / df_risk["total_dept"] * 100).round(2)
+    
+    # Calculate national average for selected pathology
+    df_selected = df_risk[df_risk["Pathologie"] == pathologie_selected].copy()
+    national_avg = df_selected["percentage"].mean()
+    
+    df_selected["Écart à la moyenne"] = df_selected["percentage"] - national_avg
+    df_selected = df_selected.sort_values("Écart à la moyenne", ascending=False)
+    
+    # Highlight if a department is selected
+    if selected_dept and selected_dept != "-- Aucun --":
+        df_selected["Couleur"] = df_selected["Département"].apply(
+            lambda x: "Sélectionné" if x == selected_dept else "Autre"
+        )
+        color_map = {"Sélectionné": "#FF6B6B", "Autre": "#4ECDC4"}
+    else:
+        df_selected["Couleur"] = "Standard"
+        color_map = {"Standard": "#4ECDC4"}
+    
+    fig = px.bar(
+        df_selected, x="Département", y="Écart à la moyenne",
+        color="Couleur",
+        color_discrete_map=color_map,
+        labels={"Écart à la moyenne": "Écart à la moyenne nationale (%)"},
+        title=f"Écart de prévalence par département - {pathologie_selected}"
+    )
+    fig.update_xaxes(tickangle=45)
+    fig.add_hline(y=0, line_dash="dash", line_color="gray", 
+                  annotation_text=f"Moyenne nationale: {national_avg:.2f}%")
+    st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown(f"""
+    **Interprétation :**
+    - Moyenne nationale : **{national_avg:.2f}%**
+    - Valeurs positives : départements avec prévalence supérieure à la moyenne
+    - Valeurs négatives : départements avec prévalence inférieure à la moyenne
+    """)
+    
+    # Show top and bottom departments
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Top 5 départements (prévalence la plus élevée) :**")
+        top5 = df_selected.nlargest(5, "percentage")[["Département", "percentage", "Écart à la moyenne"]]
+        st.dataframe(top5, hide_index=True)
+    
+    with col2:
+        st.markdown("**Top 5 départements (prévalence la plus faible) :**")
+        bottom5 = df_selected.nsmallest(5, "percentage")[["Département", "percentage", "Écart à la moyenne"]]
+        st.dataframe(bottom5, hide_index=True)

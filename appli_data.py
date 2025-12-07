@@ -342,7 +342,7 @@ elif chart_option == "Analyse de risque (Sexe vs Pathologie)":
     
     with st.expander("📊 Voir le détail des calculs étape par étape"):
         st.markdown("""
-        ### Exemple concret :
+        ### Exemple concret (fictif pour le Diabète) :
         
         **Étape 1 : Calculer les totaux par sexe**
         ```
@@ -395,8 +395,12 @@ elif chart_option == "Analyse de risque (Sexe vs Pathologie)":
             lambda x: "Sélectionné" if x == pathologie_selected else "Autre"
         )
         
+        # Calculate dynamic height based on number of pathologies
+        num_pathologies = len(df_pivot)
+        fig_height = max(400, len(df_pivot) * 25)  # Minimum 400px, 25px per pathology
+        
         fig = px.bar(
-            df_pivot, x="Pathologie", y="Différence (H-F)",
+            df_pivot, x="Différence (H-F)",  y="Pathologie",
             color="Couleur",
             color_discrete_map={"Sélectionné": "#FF6B6B", "Autre": "#4ECDC4"},
             labels={"Différence (H-F)": "Différence de risque (% Hommes - % Femmes)"},
@@ -404,6 +408,7 @@ elif chart_option == "Analyse de risque (Sexe vs Pathologie)":
         )
         fig.update_xaxes(tickangle=45)
         fig.add_hline(y=0, line_dash="dash", line_color="gray")
+        fig.update_layout(height=fig_height)
         st.plotly_chart(fig, use_container_width=True)
         
         st.markdown("""
@@ -442,7 +447,7 @@ elif chart_option == "Analyse de risque (Âge vs Pathologie)":
     
     with st.expander("📊 Voir le détail des calculs étape par étape"):
         st.markdown("""
-        ### Exemple concret pour le Diabète :
+        ### Exemple stset (fictif pour le Diabète) :
         
         **Étape 1 : Calculer les totaux par tranche d'âge**
         ```
@@ -490,6 +495,10 @@ elif chart_option == "Analyse de risque (Âge vs Pathologie)":
     # Filter for selected pathology
     df_selected = df_risk[df_risk["Pathologie"] == pathologie_selected]
     
+    # Calculate dynamic height based on number of age groups
+    num_ages = len(df_selected)
+    fig_height = max(400, num_ages * 60)  # Minimum 400px, 60px per age group
+    
     fig = px.bar(
         df_selected, x="Tranche d'age", y="percentage",
         color="Tranche d'age",
@@ -498,6 +507,7 @@ elif chart_option == "Analyse de risque (Âge vs Pathologie)":
         title=f"Distribution du risque par tranche d'âge - {pathologie_selected}"
     )
     fig.update_traces(texttemplate='%{text:.2f}%', textposition="outside")
+    fig.update_layout(height=fig_height)
     st.plotly_chart(fig, use_container_width=True)
     
     # Heatmap for all pathologies
@@ -611,6 +621,10 @@ elif chart_option == "Analyse de risque (Département vs Pathologie)":
         df_selected["Couleur"] = "Standard"
         color_map = {"Standard": "#4ECDC4"}
     
+    # Calculate dynamic height based on number of departments
+    num_depts = len(df_selected)
+    fig_height = max(400, num_depts * 20)  # Minimum 400px, 20px per department
+    
     fig = px.bar(
         df_selected, x="Département", y="Écart à la moyenne",
         color="Couleur",
@@ -621,6 +635,7 @@ elif chart_option == "Analyse de risque (Département vs Pathologie)":
     fig.update_xaxes(tickangle=45)
     fig.add_hline(y=0, line_dash="dash", line_color="gray", 
                   annotation_text=f"Moyenne nationale: {national_avg:.2f}%")
+    fig.update_layout(height=fig_height)
     st.plotly_chart(fig, use_container_width=True)
     
     st.markdown(f"""

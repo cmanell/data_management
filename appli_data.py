@@ -1,154 +1,204 @@
-from scipy.stats import norm
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 import pandas as pd
 import json
-from streamlit_plotly_events import plotly_events
+from scipy.stats import chi2_contingency, norm
 import numpy as np
 
+# =============================
+# 0. Data loading with caching
+# =============================
+st.set_page_config(page_title="Projet Data : Morbidités hospitalières", layout="wide")
+
+@st.cache_data
+def load_data():
+    df_tranch_age = pd.read_csv("df_tranch_age.csv", sep=",")
+    df_tot_age    = pd.read_csv("df_tot_age.csv", sep=",")
+    df_sejour     = pd.read_csv("df_sejour.csv", sep=",")
+    df_tableau_1  = pd.read_csv("tableau_1.csv", sep=";")
+    with open("departements.geojson", encoding="utf-8") as f:
+        dep_geojson = json.load(f)
+    return df_tranch_age, df_tot_age, df_sejour, df_tableau_1, dep_geojson
+
+df_tranch_age, df_tot_age, df_sejour, df_tableau_1, dep_geojson = load_data()
 
 # =============================
-# 0. Chargement des données
+# 1. Page config
 # =============================
-df_tranch_age = pd.read_csv("df_tranch_age.csv", sep=",")
-df_tot_age    = pd.read_csv("df_tot_age.csv",    sep=",")
-df_sejour     = pd.read_csv("df_sejour.csv",     sep=",")
-
-# GeoJSON pour la carte
-with open("departements.geojson", encoding="utf-8") as f:
-    dep_geojson = json.load(f)
-
-
-# =============================
-# 1. Configuration de la page
-# =============================
-st.set_page_config(
-    page_title="Projet Data : Morbidités hospitalières",
-    layout="wide"
-)
 
 st.title("Projet Data : Morbidité hospitalière en France métropolitaine + Corse")
 st.markdown("### Taux de recours aux établissements de santé")
-st.markdown("#### 1. Vue d’ensemble par département et évolution temporelle")
 st.markdown("---")
 
-
 # =============================
-# 2. Carte interactive par pathologie
+# 2. Sidebar filter
 # =============================
-st.subheader("1️⃣ Carte interactive : Taux de recours par département")
 
-# Liste déroulante des pathologies (sans doublons)
-pathologies_tout = sorted(df_tot_age["Pathologie"].drop_duplicates())
+st.sidebar.header("Filtres")
+pathologies = sorted(df_tot_age['Pathologie'].drop_duplicates())
+pathologie_selected = st.sidebar.selectbox("Pathologie :", pathologies, index=0)
 
-pathologie_selected = st.selectbox(
-    "Pathologie analysée :",
-    pathologies_tout
+# Department selector in sidebar
+df_map_temp = df_tot_age[
+    (df_tot_age["Pathologie"] == pathologie_selected)
+].copy()
+departments = sorted(df_map_temp['Département'].unique())
+selected_dept = st.sidebar.selectbox(
+    "Département :",
+    options=["-- Aucun --"] + departments,
+    key="dept_selector"
 )
 
-selected_points = []  # contiendra le département cliqué
-
-if pathologie_selected:
-
-    # Filtre du DF principal
-    df_p = df_tot_age[df_tot_age["Pathologie"] == pathologie_selected].copy()
-
-    fig_carte = px.choropleth(
-        df_p,
-        geojson=dep_geojson,
-        locations="dep_code",
-        featureidkey="properties.code",
-        color="nbr recours",
-        animation_frame="ANNEE",
-        color_continuous_scale="Blues",
-        range_color=(0, df_p["nbr recours"].max()),
-        labels={"nbr recours": "Taux de recours"},
-        hover_name="Département",
-        hover_data={"Pathologie": True, "Département": False}
-    )
-
-    fig_carte.update_geos(fitbounds="locations", visible=False)
-
-    fig_carte.update_layout(
-        title=f"Évolution du Taux de recours pour {pathologie_selected} (H+F) par département",
-        margin={"r": 0, "t": 40, "l": 0, "b": 0}
-    )
-
-    # Récupérer le département cliqué
-    selected_points = plotly_events(
-        fig_carte,
-        click_event=True,
-        hover_event=False,
-        select_event=False,
-        override_height=500,
-        override_width="100%"
-    )
-else:
-    st.info("Veuillez sélectionner une pathologie pour afficher la carte.")
-
+years = sorted(df_tot_age['ANNEE'].drop_duplicates())
+year_selected = st.sidebar.selectbox("Année :", years, index=len(years)-1)
 
 # =============================
-# 3. Contruction des graphiques détaillés
+# 3. Main layout
 # =============================
-col1, col2 = st.columns(2)
 
-# ---------------------------------
-# 3.1 Durée des séjours + gaussienne
-# ---------------------------------
-with col1:
-    st.subheader("2️⃣ Durée des séjours pour la pathologie sélectionnée")
+st.header("1️⃣ Vue d'ensemble sur la carte de France")
 
-    if selected_points:
-        # Année sélectionnée
-        annees = sorted(df_tot_age["ANNEE"].drop_duplicates())
-        annee_selected = st.selectbox("Année :", annees, index=len(annees) - 1)
+# Prepare data for map
+df_map = df_tot_age[
+    (df_tot_age["Pathologie"] == pathologie_selected)
+].copy()
 
-        # Département sélectionné sur la carte
-        idx = selected_points[0]["pointNumber"]
-        dep_code = df_p.iloc[idx]["dep_code"]
-        st.markdown(f"**Département sélectionné :** `{dep_code}`")
+# -----------------------------
+# Top: Choropleth map (full width)
+# -----------------------------
 
-        st.markdown(
-            f"Distribution du nombre de séjours pour **{pathologie_selected}** "
-            f"dans le département **{dep_code}** en **{annee_selected}**."
-        )
+st.subheader("Carte interactive")
 
-        # Filtre des données de séjours
-        df_sejour_filt = df_sejour[
-            (df_sejour["dep_code"] == dep_code)
-            & (df_sejour["Pathologie"] == pathologie_selected)
-            & (df_sejour["ANNEE"] == annee_selected)
-        ].copy()
+fig_map = px.choropleth(
+    df_map,
+    geojson=dep_geojson,
+    locations="dep_code",
+    animation_frame="ANNEE",
+    featureidkey="properties.code",
+    color="nbr recours",
+    color_continuous_scale="Blues",
+    range_color=(0, df_map["nbr recours"].max()),
+    labels={"nbr recours": "Taux de recours"},
+    hover_name="Département",
+    hover_data={"Pathologie": True, "Département": False}
+)
 
-        if not df_sejour_filt.empty:
-            # Histogramme des durées de séjour
-            fig_sejour = px.bar(
-                df_sejour_filt,
-                y="Nombre séjours",
-                x="Durée séjour",
-                color="Durée séjour",
-                title="Nombre de séjours par plage de durée d’hospitalisation",
-                labels={
-                    "Nombre séjours": "Nombre de séjours",
-                    "Durée séjour": "Durée du séjour (en jours)"
-                },
-                barmode="group",
-                text="ratio durée du séjour",
+fig_map.update_geos(fitbounds="locations", visible=False)
+fig_map.update_layout(
+    title=f"Représentation du taux de recours par département - {pathologie_selected}",
+    margin={"r": 0, "t": 40, "l": 0, "b": 0},
+    height=700
+)
+
+st.plotly_chart(fig_map, use_container_width=True, key="choropleth_map")
+
+# -----------------------------
+# Bottom: Sex and Age charts side by side
+# -----------------------------
+
+if selected_dept and selected_dept != "-- Aucun --":
+    # Get department info
+    dept_info = df_map[df_map["Département"] == selected_dept].iloc[0]
+    dep_code = dept_info["dep_code"]
+    dep_name = dept_info["Département"]
+
+    st.header(f"Détails pour le département : {dep_name} ({dep_code})")
+    st.markdown(f"**Département sélectionné :** {dep_name} (`{dep_code}`)")
+    st.markdown(f"**Pathologie sélectionnée :** {pathologie_selected}")
+    # Filter the data (ONLY ONCE)
+    df_tot_age_filt = df_tot_age[
+        (df_tot_age["dep_code"] == dep_code) &
+        (df_tot_age["Pathologie"] == pathologie_selected) &
+        (df_tot_age["ANNEE"] == year_selected)
+    ]
+    
+    # Add total case count
+    total_cases = df_tot_age_filt["nbr recours"].sum()
+    st.metric("Nombre total de cas", f"{total_cases:,.0f}")
+
+    # Create two columns for sex and age charts
+    col1, col2 = st.columns(2)
+    
+    # Sex distribution
+    with col1:
+        if not df_tot_age_filt.empty:
+            df_sex = df_tot_age_filt.groupby("SEXE")["nbr recours"].sum().reset_index()
+            df_sex['pct'] = (df_sex['nbr recours'] / df_sex['nbr recours'].sum() * 100).round(1)
+            
+            fig_sex = px.bar(
+                df_sex, x='SEXE', y='nbr recours', color='SEXE', text='pct',
+                color_discrete_map={"Homme": "#318CE7", "Femme": "#DE3163"},
+                title="Répartition par sexe sur toute la France"
             )
-            y_range_sejour = df_sejour_filt["Nombre séjours"].max() * 1.1
+            y_range_sejour = df_sex["nbr recours"].max() * 1.1
 
-            fig_sejour.update_traces(
-            texttemplate='%{text:.2f}%', 
-            textposition='outside')
+            fig_sex.update_traces(texttemplate='%{text:.1f}%', textposition='outside', width=0.3)
+            fig_sex.update_layout(showlegend=False)
+            fig_sex.update_yaxes(title_text='nbr recours %', range=[0, y_range_sejour])
+            st.plotly_chart(fig_sex, use_container_width=True)
 
-            fig_sejour.update_traces(width=0.8)  
-            fig_sejour.update_layout(bargap=1, legend_title_text="Plage de durée")
-            fig_sejour.update_yaxes(range=[0, y_range_sejour])
+    # Age distribution
+    with col2:
+        df_tranch_filt = df_tranch_age[
+            (df_tranch_age["dep_code"] == dep_code) &
+            (df_tranch_age["Pathologie"] == pathologie_selected) &
+            (df_tranch_age["ANNEE"] == year_selected)
+        ]
+        
+        if not df_tranch_filt.empty:
+            df_age = df_tranch_filt.groupby("Tranche d'age")["nbr recours"].sum().reset_index()
+            df_age['pct'] = (df_age['nbr recours'] / df_age['nbr recours'].sum() * 100).round(1)
+            
+            fig_age = px.bar(
+                df_age, x="Tranche d'age", y='nbr recours',
+                color="Tranche d'age", text='pct',
+                title="Répartition par tranche d'âge"
+            )
+            fig_age.update_yaxes(title_text='nbr recours %')
+            fig_age.update_traces(texttemplate='%{text:.1f}%', textposition='outside', width=1)
+            fig_age.update_yaxes(range=[0, df_age['nbr recours'].max() * 1.15])
+            fig_age.update_layout(showlegend=False)
+            st.plotly_chart(fig_age, use_container_width=True)
+        else:
+            st.info("Pas de données détaillées pour ce département.")
+else:
+    st.info("👈 Sélectionnez un département dans la barre latérale pour voir les détails.")
 
+
+# =============================
+# 4. Duration of stay section
+# =============================
+if selected_dept and selected_dept != "-- Aucun --":
+    st.markdown("---")
+
+    st.header("Analyse de la durée du séjour")
+    st.markdown("Histogramme de la durée du séjour en fonction du nombre total de séjours. Courbe de distribution normale de la durée du séjour.")
+
+    col3, col4 = st.columns(2)
+
+    dept_info = df_map[df_map["Département"] == selected_dept].iloc[0]
+    dep_code = dept_info["dep_code"]
+    
+    df_sejour_filt = df_sejour[
+        (df_sejour["dep_code"] == dep_code) &
+        (df_sejour["Pathologie"] == pathologie_selected) &
+        (df_sejour["ANNEE"] == year_selected)
+    ]
+    
+    if not df_sejour_filt.empty:
+        with col3:
+            fig_sejour = px.bar(
+                df_sejour_filt, x="Durée séjour", y="Nombre séjours",
+                color="Durée séjour", text="ratio durée du séjour",
+                labels={"Nombre séjours": "Répartition (%)", "Durée séjour": "Durée des séjours (jours)"},
+                title="Distribution durée du séjour"
+            )
+            fig_sejour.update_traces(texttemplate='%{text:.1f}%', textposition='outside', width=1)
+            fig_sejour.update_layout(height=450, showlegend=False)
             st.plotly_chart(fig_sejour, use_container_width=True)
-
-            # Distribution normale théorique
+        with col4:
             x = df_sejour_filt["Durée_num"]
             w = df_sejour_filt["Nombre séjours"]
 
@@ -160,144 +210,125 @@ with col1:
             y_curve = y_curve * w.sum() / y_curve.sum()
 
             fig_gauss = go.Figure()
-            fig_gauss.add_trace(
-                go.Scatter(
-                    x=x_curve,
-                    y=y_curve,
-                    mode="lines",
-                    name="Courbe normale théorique",
-                    line=dict(color="white", width=3),
-                )
-            )
 
-            fig_gauss.add_vline(x=mu, line_dash="dash", line_color="red", name="Moyenne")
-            fig_gauss.add_vline(x=mu + sigma, line_dash="dot", line_color="blue")
+            fig_gauss.add_trace(go.Scatter(
+                x=np.concatenate([x_curve, x_curve[::-1]]),
+                y=np.concatenate([y_curve, np.zeros_like(y_curve)]),
+               fill='toself',
+              fillcolor='rgba(173,216,230,0.3)',
+              line=dict(color='rgba(0,0,0,0)'),
+                showlegend=False
+            ))
+
+            fig_gauss.add_trace(go.Scatter(
+                x=x_curve, y=y_curve,
+                mode="lines",
+                name="Courbe normale",
+                line=dict(color="blue", width=3)
+            ))
+
+            fig_gauss.add_vline(x=mu, line_dash="dash", line_color="red")
+            fig_gauss.add_vline(x=mu + sigma, line_dash="dot", line_color="orange")
 
             fig_gauss.add_annotation(
-                x=mu,
-                y=max(y_curve) * 0.95,
-                text=f"µ = {mu:.2f} j",
-                showarrow=False,
-                font=dict(color="red", size=14),
+               x=mu, y=max(y_curve) * 0.95,
+               text=f"µ = {mu:.2f} j",
+               showarrow=False,
+              font=dict(color="red", size=14)
             )
-
             fig_gauss.add_annotation(
-                x=mu + sigma,
-                y=max(y_curve) * 0.85,
+                x=mu + sigma, y=max(y_curve) * 0.85,
                 text=f"µ + σ = {mu + sigma:.2f} j",
                 showarrow=False,
-                font=dict(color="blue"),
-            )
+                font=dict(color="orange", size=14)
+        )
 
             fig_gauss.update_layout(
-                title="Distribution normale théorique de la durée de séjour",
                 xaxis_title="Durée du séjour (jours)",
-                yaxis_title="Nombre théorique de séjours (normalisé)",
+                yaxis_title="Fréquence normalisée",
+                title="Distribution normale de la durée de séjour",
                 template="plotly_white",
+                height=450,
+                showlegend=False
             )
-
             st.plotly_chart(fig_gauss, use_container_width=True)
-
-        else:
-            st.info("Pas de données de durée de séjour disponibles pour ce département / cette année.")
     else:
-        st.info("Cliquez sur un département de la carte pour afficher les détails.")
+        st.info("Pas de données de durée de séjour disponibles.")
 
 
-# ---------------------------------
-# 3.2 Répartition par sexe + 3.3 par tranche d’âge
-# ---------------------------------
-with col2:
-    st.subheader("3️⃣ Répartition des séjours selon le sexe")
+# =============================
+# 5. Additional analyses
+# =============================
 
-    if selected_points:
-        # On réutilise dep_code et annee_selected définis dans col1
-        idx = selected_points[0]["pointNumber"]
-        dep_code = df_p.iloc[idx]["dep_code"]
+st.markdown("---")
+st.header("3️⃣ Analyses supplémentaires")
 
-        st.markdown(f"**Département sélectionné :** `{dep_code}`")
+chart_option = st.selectbox(
+    "Sélectionner une visualisation :",
+    [
+        "Répartition par sexe (France entière)",
+        "Répartition par âge (France entière)",
+        "Total par département",
+    ],
+    key="analysis_selector"
+)
 
-        if "annee_selected" in locals():
-            st.markdown(
-                f"Taux de recours pour **{pathologie_selected}** "
-                f"dans le département **{dep_code}** en **{annee_selected}**, par sexe."
-            )
+# -----------------------------
+# SEX DISTRIBUTION (FRANCE)
+# -----------------------------
+if chart_option == "Répartition par sexe (France entière)":
+    st.subheader(f"Répartition par sexe – {pathologie_selected} ({year_selected})")
 
-            df_tot_age_filt = df_tot_age[
-                (df_tot_age["dep_code"] == dep_code)
-                & (df_tot_age["Pathologie"] == pathologie_selected)
-                & (df_tot_age["ANNEE"] == annee_selected)
-            ].copy()
+    df_sex = df_tot_age[
+        (df_tot_age["Pathologie"] == pathologie_selected) &
+        (df_tot_age["ANNEE"] == year_selected)
+    ].groupby("SEXE")["nbr recours"].sum().reset_index()
+    df_sex["pct"] = (df_sex["nbr recours"] / df_sex["nbr recours"].sum() * 100).round(1)
 
-            if not df_tot_age_filt.empty:
-                fig_sexe = px.bar(
-                    df_tot_age_filt,
-                    y="nbr recours",
-                    x="SEXE",
-                    color="SEXE",
-                    title="Distribution du Taux de recours selon le sexe",
-                    labels={
-                        "nbr recours": "Taux de recours",
-                        "SEXE": "Sexe",
-                    },
-                    barmode="group",
-                    text="ratio par sexe",
-                    color_discrete_map={
-                        "Homme": "#318CE7",
-                        "Femme": "#DE3163",
-                    },
-                )
-                y_range1 = df_tot_age_filt["nbr recours"].max() * 1.1
+    fig = px.bar(
+        df_sex, x="SEXE", y="nbr recours", color="SEXE", text="pct",
+        labels={"nbr recours": "Nombre de cas"},
+        color_discrete_map={"Homme": "#318CE7", "Femme": "#DE3163"}
+    )
+    fig.update_traces(texttemplate='%{text:.1f}%', textposition="outside")
+    st.plotly_chart(fig, use_container_width=True)
 
-                fig_sexe.update_traces(
-                texttemplate='%{text:.2f}%', 
-                textposition='outside')
-                fig_sexe.update_traces(width=0.2)  
-                fig_sexe.update_yaxes(range=[0, y_range1])
+# -----------------------------
+# AGE DISTRIBUTION (FRANCE)
+# -----------------------------
+elif chart_option == "Répartition par âge (France entière)":
+    st.subheader(f"Répartition par âge – {pathologie_selected} ({year_selected})")
 
-                st.plotly_chart(fig_sexe, use_container_width=True)
-            else:
-                st.info("Pas de données de répartition par sexe pour ce département / cette année.")
-        else:
-            st.info("Veuillez d’abord choisir une année dans la colonne de gauche.")
-    else:
-        st.info("Cliquez sur un département sur la carte pour voir la répartition par sexe.")
+    df_age = df_tranch_age[
+        (df_tranch_age["Pathologie"] == pathologie_selected) &
+        (df_tranch_age["ANNEE"] == year_selected)
+    ].groupby("Tranche d'age")["nbr recours"].sum().reset_index()
+    df_age["pct"] = (df_age["nbr recours"] / df_age["nbr recours"].sum() * 100).round(1)
 
-    st.markdown("---")
-    st.subheader("4️⃣ Répartition des séjours par tranche d’âge")
+    fig = px.bar(
+        df_age, x="Tranche d'age", y="nbr recours",
+        color="Tranche d'age", text="pct",
+        labels={"nbr recours": "Nombre de cas"}
+    )
+    fig.update_traces(texttemplate='%{text:.1f}%', textposition="outside", width=0.7)
+    fig.update_layout(showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-    if selected_points and "annee_selected" in locals():
-        df_tranch_filt = df_tranch_age[
-            (df_tranch_age["dep_code"] == dep_code)
-            & (df_tranch_age["Pathologie"] == pathologie_selected)
-            & (df_tranch_age["ANNEE"] == annee_selected)
-        ].copy()
+# -----------------------------
+# TOTAL BY DEPARTMENT
+# -----------------------------
+elif chart_option == "Total par département":
+    st.subheader(f"Nombre total de cas par département – {pathologie_selected} ({year_selected})")
 
-        if not df_tranch_filt.empty:
-            fig_age = px.bar(
-                df_tranch_filt,
-                y="nbr recours",
-                x="Tranche d'age",
-                color="Tranche d'age",
-                title="Distribution du Taux de recours par tranche d’âge",
-                labels={
-                    "nbr recours": "Taux de recours",
-                    "Tranche d'age": "Tranche d’âge",
-                },
-                barmode="group",
-                text="ratio par tranche d'age",
-            )
-            y_range2 = df_tranch_filt["nbr recours"].max() * 1.1
-
-            fig_age.update_traces(
-            texttemplate='%{text:.2f}%', 
-            textposition='outside')     
-            fig_age.update_traces(width=0.6)  
-            fig_age.update_layout(legend_title_text="Tranche d’âge")
-            fig_age.update_yaxes(range=[0, y_range2])
-
-            st.plotly_chart(fig_age, use_container_width=True)
-        else:
-            st.info("Pas de données par tranche d’âge pour ce département / cette année.")
-    elif not selected_points:
-        st.info("Cliquez sur un département sur la carte pour voir la répartition par tranche d’âge.")
+    df_total_cases = df_tot_age[
+        (df_tot_age["Pathologie"] == pathologie_selected) &
+        (df_tot_age["ANNEE"] == year_selected)
+    ].groupby("Département")["nbr recours"].sum().reset_index().sort_values("nbr recours", ascending=False)
+    
+    fig = px.bar(
+        df_total_cases, x="Département", y="nbr recours",
+        text="nbr recours",
+        labels={"nbr recours": "Nombre de cas"}
+    )
+    fig.update_xaxes(tickangle=45)
+    st.plotly_chart(fig, use_container_width=True)

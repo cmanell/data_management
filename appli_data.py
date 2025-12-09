@@ -10,6 +10,7 @@ import numpy as np
 # =============================
 # 0. Data loading with caching
 # =============================
+st.set_page_config(page_title="Projet Data : Morbidités hospitalières", layout="wide")
 
 @st.cache_data
 def load_data():
@@ -30,9 +31,95 @@ st.markdown("---")
 # =============================
 # PRESENTATION SECTION
 # =============================
+st.markdown("Présentation du projet, des données et du traitement appliqué.")
 
-st.title("Projet Data : Morbidité hospitalière en France métropolitaine + Corse")
-st.markdown("### Taux de recours aux établissements de santé")
+with st.expander("ℹ️ **À propos du projet et des données**", expanded=False):
+    st.markdown("""
+    #### Source des données
+    
+    Les jeux de données étudiés proviennent de l'**Agence Technique de l'Information sur l'Hospitalisation (ATIH)** 
+    et sont publiés par la **Direction de la Recherche, des Études, de l'Évaluation et des Statistiques (DREES)**. 
+    Ils concernent la morbidité hospitalière dans les établissements de soins de courte durée en France métropolitaine 
+    entre **2018 et 2022**.
+    
+    #### Structure des données utilisées
+    
+    - **Tableau 1** (`tableau_1.csv`) : ~**3,9 millions** d'observations réparties sur trois niveaux géographiques 
+      (national, régional, départemental)
+    - **Tableau 2** (`tableau_2.csv`) : ~**1 million** d'observations sur la durée des séjours
+    - **Variables clés** : pathologie, sexe, âge (total et tranches), année, nombre de recours, durée des séjours
+    
+    #### Traitement appliqué
+    
+    Le traitement (éffectué dans traitement.ipynb) procède à un **filtrage systématique** des données en :
+    - Séparant les trois niveaux géographiques
+    - Excluant les **DOM-TOM** et les lignes de **totaux agrégés**
+    - Conservant uniquement les **départements métropolitains**
+    
+    **Deux dataframes principaux** sont créés à partir du tableau 1 :
+    - `df_tot_age` : regroupe tous les âges en **différenciant les sexes**
+    - `df_tranch_age` : présente les données par **tranche d'âge** sans distinction de sexe
+    
+    #### Gestion des valeurs manquantes
+    
+    Les valeurs manquantes (marquées **"ND"** dans les données brutes) ont été traitées en appliquant une 
+    **moyenne calculée** par département, sexe ou tranche d'âge selon le cas, et pathologie, en utilisant 
+    les années disponibles pour chaque groupe.
+    
+    #### Variables dérivées
+    
+    Le traitement inclut aussi la création de variables dérivées, et des calculus:
+    - Extraction des **codes départementaux** et des **noms de pathologies** épurés
+    - Calcul de variables dérivées : **total des cas** par groupe et **ratios** (par sexe ou tranche d'âge)
+    - Transformation du **format large → format long** pour `df_sejour` (durée des séjours)
+    
+    Les trois dataframes finaux (`df_tot_age`, `df_tranch_age`, `df_sejour`) sont exportés en format CSV 
+    pour être utilisés dans cette application Streamlit.
+    """)
+
+with st.expander("🔍 **Comparaison : Données originales vs. transformées**", expanded=False):
+    st.markdown("#### Tableau 1 : Taux de recours aux établissements MCO")
+    
+    # Original data displayed full width
+    st.markdown("**📁 Données ORIGINALES** (`tableau_1.csv`)")
+    st.dataframe(df_tableau_1.head(3), use_container_width=True)
+    st.caption(f"📊 {len(df_tableau_1):,} lignes × {len(df_tableau_1.columns)} colonnes")
+    st.caption("✓ 3 niveaux géo | ✓ DOM-TOM | ✓ 'Ensemble' sexe | ✓ Valeurs 'ND'")
+    
+    st.markdown("---")
+    
+    # Transformed data in two columns
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**🟢 Données TRANSFORMÉES** (`df_tot_age.csv`)")
+        st.dataframe(df_tot_age.head(3), use_container_width=True)
+        st.caption(f"📊 {len(df_tot_age):,} lignes × {len(df_tot_age.columns)} colonnes")
+        st.caption("✅ Départements uniquement | ✅ M/F séparés | ✅ NaN imputés | ✅ Ratios ajoutés")
+    
+    with col2:
+        st.markdown("**🟢 Données TRANSFORMÉES** (`df_tranch_age.csv`)")
+        st.dataframe(df_tranch_age.head(3), use_container_width=True)
+        st.caption(f"📊 {len(df_tranch_age):,} lignes × {len(df_tranch_age.columns)} colonnes")
+        st.caption("✅ Tranches d'âge isolées | ✅ 'Ensemble' sexe uniquement")
+    
+    st.markdown("---")
+    st.markdown("#### Tableau 2 : Durée des séjours hospitaliers")
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        st.markdown("**📁 Données ORIGINALES** (`tableau_2.csv` - format large)")
+        st.dataframe(df_tableau_2.head(3), use_container_width=True)
+        st.caption(f"📊 {len(df_tableau_2):,} lignes × {len(df_tableau_2.columns)} colonnes")
+        st.caption(" Une colonne par durée ('<24h', '1 jour', '2 jours'...)")
+    
+    with col4:
+        st.markdown("** Données TRANSFORMÉES** (`df_sejour.csv` - format long)")
+        st.dataframe(df_sejour.head(3), use_container_width=True)
+        st.caption(f"📊 {len(df_sejour):,} lignes × {len(df_sejour.columns)} colonnes")
+        st.caption(" Format long (une ligne par durée) |  Ratio ajouté |  Durée_num")
+
 st.markdown("---")
 
 # =============================
@@ -61,12 +148,11 @@ year_selected = st.sidebar.selectbox("Année :", years, index=len(years)-1)
 # 3. Main layout
 # =============================
 
-st.header("1️⃣ Vue d'ensemble par département")
+st.header("1️⃣ Vue d'ensemble sur la carte de France")
 
 # Prepare data for map
 df_map = df_tot_age[
-    (df_tot_age["Pathologie"] == pathologie_selected) & 
-    (df_tot_age["ANNEE"] == year_selected)
+    (df_tot_age["Pathologie"] == pathologie_selected)
 ].copy()
 
 # -----------------------------
@@ -79,20 +165,21 @@ fig_map = px.choropleth(
     df_map,
     geojson=dep_geojson,
     locations="dep_code",
+    animation_frame="ANNEE",
     featureidkey="properties.code",
     color="nbr recours",
     color_continuous_scale="Blues",
     range_color=(0, df_map["nbr recours"].max()),
     labels={"nbr recours": "Taux de recours"},
     hover_name="Département",
-    hover_data={"Pathologie": True, "Département": False, "dep_code": False}
+    hover_data={"Pathologie": True, "Département": False}
 )
 
 fig_map.update_geos(fitbounds="locations", visible=False)
 fig_map.update_layout(
-    title=f"Taux de recours - {pathologie_selected}",
+    title=f"Représentation du taux de recours par département - {pathologie_selected}",
     margin={"r": 0, "t": 40, "l": 0, "b": 0},
-    height=500
+    height=700
 )
 
 st.plotly_chart(fig_map, use_container_width=True, key="choropleth_map")
@@ -101,16 +188,15 @@ st.plotly_chart(fig_map, use_container_width=True, key="choropleth_map")
 # Bottom: Sex and Age charts side by side
 # -----------------------------
 
-st.subheader("Détails par département")
-
 if selected_dept and selected_dept != "-- Aucun --":
     # Get department info
     dept_info = df_map[df_map["Département"] == selected_dept].iloc[0]
     dep_code = dept_info["dep_code"]
     dep_name = dept_info["Département"]
-    
+
+    st.header(f"Détails pour le département : {dep_name} ({dep_code})")
     st.markdown(f"**Département sélectionné :** {dep_name} (`{dep_code}`)")
-    
+    st.markdown(f"**Pathologie sélectionnée :** {pathologie_selected}")
     # Filter the data (ONLY ONCE)
     df_tot_age_filt = df_tot_age[
         (df_tot_age["dep_code"] == dep_code) &
@@ -134,10 +220,13 @@ if selected_dept and selected_dept != "-- Aucun --":
             fig_sex = px.bar(
                 df_sex, x='SEXE', y='nbr recours', color='SEXE', text='pct',
                 color_discrete_map={"Homme": "#318CE7", "Femme": "#DE3163"},
-                title="Répartition par sexe"
+                title="Répartition par sexe sur toute la France"
             )
+            y_range_sejour = df_sex["nbr recours"].max() * 1.1
+
             fig_sex.update_traces(texttemplate='%{text:.1f}%', textposition='outside', width=0.3)
-            fig_sex.update_layout(height=450, showlegend=False)
+            fig_sex.update_layout(showlegend=False)
+            fig_sex.update_yaxes(title_text='nbr recours %', range=[0, y_range_sejour])
             st.plotly_chart(fig_sex, use_container_width=True)
 
     # Age distribution
@@ -157,9 +246,10 @@ if selected_dept and selected_dept != "-- Aucun --":
                 color="Tranche d'age", text='pct',
                 title="Répartition par tranche d'âge"
             )
-            fig_age.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+            fig_age.update_yaxes(title_text='nbr recours %')
+            fig_age.update_traces(texttemplate='%{text:.1f}%', textposition='outside', width=1)
             fig_age.update_yaxes(range=[0, df_age['nbr recours'].max() * 1.15])
-            fig_age.update_layout(height=450, showlegend=False)
+            fig_age.update_layout(showlegend=False)
             st.plotly_chart(fig_age, use_container_width=True)
         else:
             st.info("Pas de données détaillées pour ce département.")
@@ -170,11 +260,14 @@ else:
 # =============================
 # 4. Duration of stay section
 # =============================
-
 if selected_dept and selected_dept != "-- Aucun --":
     st.markdown("---")
-    st.header("2️⃣ Analyse de la durée de séjour")
-    
+
+    st.header("Analyse de la durée du séjour")
+    st.markdown("Histogramme de la durée du séjour en fonction du nombre total de séjours. Courbe de distribution normale de la durée du séjour.")
+
+    col3, col4 = st.columns(2)
+
     dept_info = df_map[df_map["Département"] == selected_dept].iloc[0]
     dep_code = dept_info["dep_code"]
     
@@ -185,68 +278,70 @@ if selected_dept and selected_dept != "-- Aucun --":
     ]
     
     if not df_sejour_filt.empty:
-        st.subheader("Distribution des durées")
-        fig_sejour = px.bar(
-            df_sejour_filt, x="Durée séjour", y="Nombre séjours",
-            color="Durée séjour", text="ratio durée du séjour",
-            labels={"Nombre séjours": "Nombre de séjours", "Durée séjour": "Durée (jours)"}
+        with col3:
+            fig_sejour = px.bar(
+                df_sejour_filt, x="Durée séjour", y="Nombre séjours",
+                color="Durée séjour", text="ratio durée du séjour",
+                labels={"Nombre séjours": "Répartition (%)", "Durée séjour": "Durée des séjours (jours)"},
+                title="Distribution durée du séjour"
+            )
+            fig_sejour.update_traces(texttemplate='%{text:.1f}%', textposition='outside', width=1)
+            fig_sejour.update_layout(height=450, showlegend=False)
+            st.plotly_chart(fig_sejour, use_container_width=True)
+        with col4:
+            x = df_sejour_filt["Durée_num"]
+            w = df_sejour_filt["Nombre séjours"]
+
+            mu = np.average(x, weights=w)
+            sigma = np.sqrt(np.average((x - mu) ** 2, weights=w))
+
+            x_curve = np.linspace(min(x), max(x), 300)
+            y_curve = norm.pdf(x_curve, mu, sigma)
+            y_curve = y_curve * w.sum() / y_curve.sum()
+
+            fig_gauss = go.Figure()
+
+            fig_gauss.add_trace(go.Scatter(
+                x=np.concatenate([x_curve, x_curve[::-1]]),
+                y=np.concatenate([y_curve, np.zeros_like(y_curve)]),
+               fill='toself',
+              fillcolor='rgba(173,216,230,0.3)',
+              line=dict(color='rgba(0,0,0,0)'),
+                showlegend=False
+            ))
+
+            fig_gauss.add_trace(go.Scatter(
+                x=x_curve, y=y_curve,
+                mode="lines",
+                name="Courbe normale",
+                line=dict(color="blue", width=3)
+            ))
+
+            fig_gauss.add_vline(x=mu, line_dash="dash", line_color="red")
+            fig_gauss.add_vline(x=mu + sigma, line_dash="dot", line_color="orange")
+
+            fig_gauss.add_annotation(
+               x=mu, y=max(y_curve) * 0.95,
+               text=f"µ = {mu:.2f} j",
+               showarrow=False,
+              font=dict(color="red", size=14)
+            )
+            fig_gauss.add_annotation(
+                x=mu + sigma, y=max(y_curve) * 0.85,
+                text=f"µ + σ = {mu + sigma:.2f} j",
+                showarrow=False,
+                font=dict(color="orange", size=14)
         )
-        fig_sejour.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
-        fig_sejour.update_layout(height=450)
-        st.plotly_chart(fig_sejour, use_container_width=True)
-        
-        st.subheader("Distribution normale théorique")
-        x = df_sejour_filt["Durée_num"]
-        w = df_sejour_filt["Nombre séjours"]
 
-        mu = np.average(x, weights=w)
-        sigma = np.sqrt(np.average((x - mu) ** 2, weights=w))
-
-        x_curve = np.linspace(min(x), max(x), 300)
-        y_curve = norm.pdf(x_curve, mu, sigma)
-        y_curve = y_curve * w.sum() / y_curve.sum()
-
-        fig_gauss = go.Figure()
-
-        fig_gauss.add_trace(go.Scatter(
-            x=np.concatenate([x_curve, x_curve[::-1]]),
-            y=np.concatenate([y_curve, np.zeros_like(y_curve)]),
-            fill='toself',
-            fillcolor='rgba(173,216,230,0.3)',
-            line=dict(color='rgba(0,0,0,0)'),
-            showlegend=False
-        ))
-
-        fig_gauss.add_trace(go.Scatter(
-            x=x_curve, y=y_curve,
-            mode="lines",
-            name="Courbe normale",
-            line=dict(color="blue", width=3)
-        ))
-
-        fig_gauss.add_vline(x=mu, line_dash="dash", line_color="red")
-        fig_gauss.add_vline(x=mu + sigma, line_dash="dot", line_color="orange")
-
-        fig_gauss.add_annotation(
-            x=mu, y=max(y_curve) * 0.95,
-            text=f"µ = {mu:.2f} j",
-            showarrow=False,
-            font=dict(color="red", size=14)
-        )
-        fig_gauss.add_annotation(
-            x=mu + sigma, y=max(y_curve) * 0.85,
-            text=f"µ + σ = {mu + sigma:.2f} j",
-            showarrow=False,
-            font=dict(color="orange", size=14)
-        )
-
-        fig_gauss.update_layout(
-            xaxis_title="Durée du séjour (jours)",
-            yaxis_title="Fréquence normalisée",
-            template="plotly_white",
-            height=450
-        )
-        st.plotly_chart(fig_gauss, use_container_width=True)
+            fig_gauss.update_layout(
+                xaxis_title="Durée du séjour (jours)",
+                yaxis_title="Fréquence normalisée",
+                title="Distribution normale de la durée de séjour",
+                template="plotly_white",
+                height=450,
+                showlegend=False
+            )
+            st.plotly_chart(fig_gauss, use_container_width=True)
     else:
         st.info("Pas de données de durée de séjour disponibles.")
 
@@ -261,12 +356,9 @@ st.header("3️⃣ Analyses supplémentaires")
 chart_option = st.selectbox(
     "Sélectionner une visualisation :",
     [
-        "Répartition par sexe (France)",
-        "Répartition par âge (France)",
+        "Répartition par sexe (France entière)",
+        "Répartition par âge (France entière)",
         "Total par département",
-        "Analyse de risque (Sexe vs Pathologie)",
-        "Analyse de risque (Âge vs Pathologie)",
-        "Analyse de risque (Département vs Pathologie)"
     ],
     key="analysis_selector"
 )
@@ -274,7 +366,7 @@ chart_option = st.selectbox(
 # -----------------------------
 # SEX DISTRIBUTION (FRANCE)
 # -----------------------------
-if chart_option == "Répartition par sexe (France)":
+if chart_option == "Répartition par sexe (France entière)":
     st.subheader(f"Répartition par sexe – {pathologie_selected} ({year_selected})")
 
     df_sex = df_tot_age[
@@ -294,7 +386,7 @@ if chart_option == "Répartition par sexe (France)":
 # -----------------------------
 # AGE DISTRIBUTION (FRANCE)
 # -----------------------------
-elif chart_option == "Répartition par âge (France)":
+elif chart_option == "Répartition par âge (France entière)":
     st.subheader(f"Répartition par âge – {pathologie_selected} ({year_selected})")
 
     df_age = df_tranch_age[
@@ -308,7 +400,8 @@ elif chart_option == "Répartition par âge (France)":
         color="Tranche d'age", text="pct",
         labels={"nbr recours": "Nombre de cas"}
     )
-    fig.update_traces(texttemplate='%{text:.1f}%', textposition="outside")
+    fig.update_traces(texttemplate='%{text:.1f}%', textposition="outside", width=0.7)
+    fig.update_layout(showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
@@ -327,339 +420,5 @@ elif chart_option == "Total par département":
         text="nbr recours",
         labels={"nbr recours": "Nombre de cas"}
     )
-    fig.update_traces(textposition="outside")
     fig.update_xaxes(tickangle=45)
     st.plotly_chart(fig, use_container_width=True)
-
-# -----------------------------
-# RISK ANALYSIS: SEX vs PATHOLOGY
-# -----------------------------
-elif chart_option == "Analyse de risque (Sexe vs Pathologie)":
-    st.subheader(f"Analyse de risque : Sexe vs Pathologie ({year_selected})")
-    
-    st.markdown("""
-    **Méthode de calcul :**
-    - Pour chaque sexe : % = (cas de la pathologie) / (total des cas) × 100
-    - Différence = % Hommes - % Femmes
-    - Valeur positive → plus fréquent chez les hommes
-    - Valeur négative → plus fréquent chez les femmes
-    """)
-    
-    with st.expander("📊 Voir le détail des calculs étape par étape"):
-        st.markdown("""
-        ### Exemple concret (fictif pour le Diabète) :
-        
-        **Étape 1 : Calculer les totaux par sexe**
-        ```
-        Hommes : Diabète (1000) + Maladies cardio (2000) + Cancer (1500) = 4500 cas totaux
-        Femmes : Diabète (1500) + Maladies cardio (1800) + Cancer (1200) = 4500 cas totaux
-        ```
-        
-        **Étape 2 : Calculer le pourcentage pour chaque pathologie**
-        ```
-        % Diabète chez Hommes = (1000 / 4500) × 100 = 22.22%
-        % Diabète chez Femmes = (1500 / 4500) × 100 = 33.33%
-        ```
-        
-        **Étape 3 : Calculer la différence**
-        ```
-        Différence = 22.22% - 33.33% = -11.11%
-        
-        Interprétation : Le diabète est 11.11% MOINS fréquent chez les hommes
-        (ou 11.11% PLUS fréquent chez les femmes)
-        ```
-        
-        ### Pourquoi cette méthode ?
-        
-        Elle permet de comparer l'impact relatif de chaque pathologie sur chaque sexe,
-        indépendamment du nombre total de cas.
-        """)
-    
-    # Calculate total cases by sex and pathology
-    df_risk = df_tot_age[df_tot_age["ANNEE"] == year_selected].groupby(
-        ["SEXE", "Pathologie"]
-    )["nbr recours"].sum().reset_index()
-    
-    # Calculate total for each sex
-    df_sex_total = df_risk.groupby("SEXE")["nbr recours"].sum().reset_index()
-    df_sex_total.columns = ["SEXE", "total_sexe"]
-    
-    # Merge to get percentages
-    df_risk = df_risk.merge(df_sex_total, on="SEXE")
-    df_risk["percentage"] = (df_risk["nbr recours"] / df_risk["total_sexe"] * 100).round(2)
-    
-    # Pivot for comparison
-    df_pivot = df_risk.pivot(index="Pathologie", columns="SEXE", values="percentage").reset_index()
-    
-    if "Homme" in df_pivot.columns and "Femme" in df_pivot.columns:
-        df_pivot["Différence (H-F)"] = df_pivot["Homme"] - df_pivot["Femme"]
-        df_pivot = df_pivot.sort_values("Différence (H-F)", ascending=False)
-        
-        # Highlight selected pathology
-        df_pivot["Couleur"] = df_pivot["Pathologie"].apply(
-            lambda x: "Sélectionné" if x == pathologie_selected else "Autre"
-        )
-        
-        # Calculate dynamic height based on number of pathologies
-        num_pathologies = len(df_pivot)
-        fig_height = max(400, len(df_pivot) * 25)  # Minimum 400px, 25px per pathology
-        
-        fig = px.bar(
-            df_pivot, x="Différence (H-F)",  y="Pathologie",
-            color="Couleur",
-            color_discrete_map={"Sélectionné": "#FF6B6B", "Autre": "#4ECDC4"},
-            labels={"Différence (H-F)": "Différence de risque (% Hommes - % Femmes)"},
-            title="Différence de prévalence entre hommes et femmes par pathologie"
-        )
-        fig.update_xaxes(tickangle=45)
-        fig.add_hline(y=0, line_dash="dash", line_color="gray")
-        fig.update_layout(height=fig_height)
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.markdown("""
-        **Interprétation :**
-        - Valeurs positives : pathologie plus fréquente chez les hommes
-        - Valeurs négatives : pathologie plus fréquente chez les femmes
-        - La pathologie sélectionnée est mise en évidence en rouge
-        """)
-        
-        # Show detailed table for selected pathology
-        selected_row = df_pivot[df_pivot["Pathologie"] == pathologie_selected]
-        if not selected_row.empty:
-            st.markdown(f"**Détails pour {pathologie_selected} :**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("% Hommes", f"{selected_row['Homme'].values[0]:.2f}%")
-            with col2:
-                st.metric("% Femmes", f"{selected_row['Femme'].values[0]:.2f}%")
-            with col3:
-                diff = selected_row['Différence (H-F)'].values[0]
-                st.metric("Différence", f"{diff:.2f}%", 
-                         delta=None if abs(diff) < 1 else ("Plus fréquent chez hommes" if diff > 0 else "Plus fréquent chez femmes"))
-
-# -----------------------------
-# RISK ANALYSIS: AGE vs PATHOLOGY
-# -----------------------------
-elif chart_option == "Analyse de risque (Âge vs Pathologie)":
-    st.subheader(f"Analyse de risque : Âge vs Pathologie ({year_selected})")
-    
-    st.markdown("""
-    **Méthode de calcul :**
-    - Pour chaque tranche d'âge : % = (cas de la pathologie) / (total des cas dans la tranche) × 100
-    - Montre quelle proportion des problèmes de santé est représentée par la pathologie sélectionnée
-    - Permet d'identifier les tranches d'âge les plus touchées
-    """)
-    
-    with st.expander("📊 Voir le détail des calculs étape par étape"):
-        st.markdown("""
-        ### Exemple concret (fictif pour le Diabète) :
-        
-        **Étape 1 : Calculer les totaux par tranche d'âge**
-        ```
-        Tranche 5-14 ans : Diabète (100) + Asthme (50) + Fractures (30) = 180 cas totaux
-        Tranche 65-74 ans : Diabète (800) + Cardio (1200) + Cancer (600) = 2600 cas totaux
-        ```
-        
-        **Étape 2 : Calculer le pourcentage**
-        ```
-        % Diabète chez 5-14 ans = (100 / 180) × 100 = 55.56%
-        % Diabète chez 65-74 ans = (800 / 2600) × 100 = 30.77%
-        ```
-        
-        **Interprétation :**
-        ```
-        Chez les 5-14 ans : Le diabète représente 55.56% de tous leurs problèmes de santé
-        Chez les 65-74 ans : Le diabète représente 30.77% de tous leurs problèmes de santé
-        
-        Même si les 65-74 ans ont PLUS de cas de diabète en absolu (800 vs 100),
-        le diabète est proportionnellement PLUS important chez les jeunes (55.56% vs 30.77%)
-        car les jeunes ont moins d'autres problèmes de santé.
-        ```
-        
-        ### La heatmap (carte de chaleur)
-        
-        Montre ces pourcentages pour toutes les pathologies en même temps :
-        - Couleurs foncées = prévalence élevée dans cette tranche d'âge
-        - Couleurs claires = prévalence faible
-        - Permet d'identifier rapidement les pathologies spécifiques à certains âges
-        """)
-    
-    # Calculate cases by age and pathology
-    df_risk = df_tranch_age[df_tranch_age["ANNEE"] == year_selected].groupby(
-        ["Tranche d'age", "Pathologie"]
-    )["nbr recours"].sum().reset_index()
-    
-    # Calculate total for each age group
-    df_age_total = df_risk.groupby("Tranche d'age")["nbr recours"].sum().reset_index()
-    df_age_total.columns = ["Tranche d'age", "total_age"]
-    
-    # Merge and calculate percentages
-    df_risk = df_risk.merge(df_age_total, on="Tranche d'age")
-    df_risk["percentage"] = (df_risk["nbr recours"] / df_risk["total_age"] * 100).round(2)
-    
-    # Filter for selected pathology
-    df_selected = df_risk[df_risk["Pathologie"] == pathologie_selected]
-    
-    # Calculate dynamic height based on number of age groups
-    num_ages = len(df_selected)
-    fig_height = max(400, num_ages * 60)  # Minimum 400px, 60px per age group
-    
-    fig = px.bar(
-        df_selected, x="Tranche d'age", y="percentage",
-        color="Tranche d'age",
-        text="percentage",
-        labels={"percentage": "% des cas dans la tranche d'âge"},
-        title=f"Distribution du risque par tranche d'âge - {pathologie_selected}"
-    )
-    fig.update_traces(texttemplate='%{text:.2f}%', textposition="outside")
-    fig.update_layout(height=fig_height)
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Heatmap for all pathologies
-    st.markdown("**Comparaison entre toutes les pathologies :**")
-    df_heatmap = df_risk.pivot(index="Pathologie", columns="Tranche d'age", values="percentage")
-    
-    fig_heat = px.imshow(
-        df_heatmap,
-        labels=dict(x="Tranche d'âge", y="Pathologie", color="% de prévalence"),
-        aspect="auto",
-        color_continuous_scale="Blues"
-    )
-    fig_heat.update_xaxes(side="bottom")
-    st.plotly_chart(fig_heat, use_container_width=True)
-    
-    st.markdown("""
-    **Interprétation :**
-    - Les couleurs plus foncées indiquent une prévalence plus élevée
-    - Permet d'identifier les pathologies spécifiques à certaines tranches d'âge
-    """)
-
-# -----------------------------
-# RISK ANALYSIS: DEPARTMENT vs PATHOLOGY
-# -----------------------------
-elif chart_option == "Analyse de risque (Département vs Pathologie)":
-    st.subheader(f"Analyse de risque : Département vs Pathologie ({year_selected})")
-    
-    st.markdown("""
-    **Méthode de calcul :**
-    - Pour chaque département : % = (cas de la pathologie) / (total des cas du département) × 100
-    - Moyenne nationale = moyenne de tous les % départementaux
-    - Écart = % du département - Moyenne nationale
-    - Permet d'identifier les variations géographiques (facteurs environnementaux, démographiques, etc.)
-    """)
-    
-    with st.expander("📊 Voir le détail des calculs étape par étape"):
-        st.markdown("""
-        ### Étapes du calcul :
-        
-        **Étape 1 : Agrégation des données**
-        ```
-        Pour chaque département et pathologie, sommer tous les recours
-        Exemple : Ain + Diabète sucré = 500 cas
-        ```
-        
-        **Étape 2 : Calcul du total par département**
-        ```
-        Total Ain = Diabète (500) + Maladies cardio (800) + Cancer (300) = 1600 cas
-        ```
-        
-        **Étape 3 : Calcul du pourcentage**
-        ```
-        % Ain pour Diabète = (500 / 1600) × 100 = 31.25%
-        
-        Interprétation : Le diabète représente 31.25% de tous les cas hospitaliers dans l'Ain
-        ```
-        
-        **Étape 4 : Calcul de la moyenne nationale**
-        ```
-        Moyenne nationale = (% Ain + % Aisne + % Allier + ... ) / nombre de départements
-        Exemple : (31.25 + 40.00 + 25.00 + ...) / 96 = 32.50%
-        ```
-        
-        **Étape 5 : Calcul de l'écart**
-        ```
-        Écart Ain = 31.25% - 32.50% = -1.25%
-        Écart Aisne = 40.00% - 32.50% = +7.50%
-        
-        Interprétation :
-        - Ain : 1.25% EN DESSOUS de la moyenne (moins de diabète que la moyenne nationale)
-        - Aisne : 7.50% AU DESSUS de la moyenne (plus de diabète que la moyenne nationale)
-        ```
-        
-        ### Pourquoi utiliser des pourcentages plutôt que des nombres absolus ?
-        
-        Les départements ont des populations et des nombres de cas très différents :
-        - Paris : 10,000 cas totaux, 3,000 diabète = 30%
-        - Lozère : 500 cas totaux, 150 diabète = 30%
-        
-        Même si Paris a 20× plus de cas en absolu, les deux départements ont la **même prévalence relative** (30%).
-        Cela permet une comparaison juste entre petits et grands départements.
-        """)
-    
-    # Calculate cases by department and pathology
-    df_risk = df_tot_age[df_tot_age["ANNEE"] == year_selected].groupby(
-        ["Département", "Pathologie"]
-    )["nbr recours"].sum().reset_index()
-    
-    # Calculate total for each department
-    df_dept_total = df_risk.groupby("Département")["nbr recours"].sum().reset_index()
-    df_dept_total.columns = ["Département", "total_dept"]
-    
-    # Merge and calculate percentages
-    df_risk = df_risk.merge(df_dept_total, on="Département")
-    df_risk["percentage"] = (df_risk["nbr recours"] / df_risk["total_dept"] * 100).round(2)
-    
-    # Calculate national average for selected pathology
-    df_selected = df_risk[df_risk["Pathologie"] == pathologie_selected].copy()
-    national_avg = df_selected["percentage"].mean()
-    
-    df_selected["Écart à la moyenne"] = df_selected["percentage"] - national_avg
-    df_selected = df_selected.sort_values("Écart à la moyenne", ascending=False)
-    
-    # Highlight if a department is selected
-    if selected_dept and selected_dept != "-- Aucun --":
-        df_selected["Couleur"] = df_selected["Département"].apply(
-            lambda x: "Sélectionné" if x == selected_dept else "Autre"
-        )
-        color_map = {"Sélectionné": "#FF6B6B", "Autre": "#4ECDC4"}
-    else:
-        df_selected["Couleur"] = "Standard"
-        color_map = {"Standard": "#4ECDC4"}
-    
-    # Calculate dynamic height based on number of departments
-    num_depts = len(df_selected)
-    fig_height = max(400, num_depts * 20)  # Minimum 400px, 20px per department
-    
-    fig = px.bar(
-        df_selected, y="Département", x="Écart à la moyenne",
-        color="Couleur",
-        color_discrete_map=color_map,
-        labels={"Écart à la moyenne": "Écart à la moyenne nationale (%)"},
-        title=f"Écart de prévalence par département - {pathologie_selected}",
-        orientation='h'
-    )
-    fig.update_yaxes(tickangle=0)
-    fig.add_vline(x=0, line_dash="dash", line_color="gray", 
-                  annotation_text=f"Moyenne nationale: {national_avg:.2f}%",
-                  annotation_position="top right")
-    fig.update_layout(height=fig_height)
-    st.plotly_chart(fig, use_container_width=True)
-    
-    st.markdown(f"""
-    **Interprétation :**
-    - Moyenne nationale : **{national_avg:.2f}%**
-    - Valeurs positives : départements avec prévalence supérieure à la moyenne
-    - Valeurs négatives : départements avec prévalence inférieure à la moyenne
-    """)
-    
-    # Show top and bottom departments
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**Top 5 départements (prévalence la plus élevée) :**")
-        top5 = df_selected.nlargest(5, "percentage")[["Département", "percentage", "Écart à la moyenne"]]
-        st.dataframe(top5, hide_index=True)
-    
-    with col2:
-        st.markdown("**Top 5 départements (prévalence la plus faible) :**")
-        bottom5 = df_selected.nsmallest(5, "percentage")[["Département", "percentage", "Écart à la moyenne"]]
-        st.dataframe(bottom5, hide_index=True)

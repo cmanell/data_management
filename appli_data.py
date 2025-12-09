@@ -17,17 +17,20 @@ def load_data():
     df_tot_age    = pd.read_csv("df_tot_age.csv", sep=",")
     df_sejour     = pd.read_csv("df_sejour.csv", sep=",")
     df_tableau_1  = pd.read_csv("tableau_1.csv", sep=";")
+    df_tableau_2  = pd.read_csv("tableau_2.csv", sep=";")
     with open("departements.geojson", encoding="utf-8") as f:
         dep_geojson = json.load(f)
-    return df_tranch_age, df_tot_age, df_sejour, df_tableau_1, dep_geojson
+    return df_tranch_age, df_tot_age, df_sejour, df_tableau_1, df_tableau_2, dep_geojson
 
-df_tranch_age, df_tot_age, df_sejour, df_tableau_1, dep_geojson = load_data()
+df_tranch_age, df_tot_age, df_sejour, df_tableau_1, df_tableau_2, dep_geojson = load_data()
+
+st.title("Projet Data Management : Morbidité hospitalière en France métropolitaine")
+st.markdown("---")
 
 # =============================
-# 1. Page config
+# PRESENTATION SECTION
 # =============================
 
-st.set_page_config(page_title="Projet Data : Morbidités hospitalières", layout="wide")
 st.title("Projet Data : Morbidité hospitalière en France métropolitaine + Corse")
 st.markdown("### Taux de recours aux établissements de santé")
 st.markdown("---")

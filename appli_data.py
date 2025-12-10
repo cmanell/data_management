@@ -6,6 +6,12 @@ import pandas as pd
 import json
 from scipy.stats import chi2_contingency, norm
 import numpy as np
+import re
+from unidecode import unidecode
+from wordcloud import WordCloud
+from collections import defaultdict
+import spacy
+import matplotlib.pyplot as plt
 
 # =============================
 # 0. Data loading with caching
@@ -18,18 +24,108 @@ def load_data():
     df_tot_age    = pd.read_csv("df_tot_age.csv", sep=",")
     df_sejour     = pd.read_csv("df_sejour.csv", sep=",")
     df_tableau_1  = pd.read_csv("tableau_1.csv", sep=";")
+    df_tableau_2  = pd.read_csv("tableau_2.csv", sep=";")
     with open("departements.geojson", encoding="utf-8") as f:
         dep_geojson = json.load(f)
-    return df_tranch_age, df_tot_age, df_sejour, df_tableau_1, dep_geojson
+    return df_tranch_age, df_tot_age, df_sejour, df_tableau_1, df_tableau_2, dep_geojson
 
-df_tranch_age, df_tot_age, df_sejour, df_tableau_1, dep_geojson = load_data()
+df_tranch_age, df_tot_age, df_sejour, df_tableau_1, df_tableau_2, dep_geojson = load_data()
+
+st.title("Projet Data Management : Morbidité hospitalière en France métropolitaine")
+st.markdown("---")
 
 # =============================
-# 1. Page config
+# PRESENTATION SECTION
 # =============================
+st.markdown("Présentation du projet, des données et du traitement appliqué.")
 
-st.title("Projet Data : Morbidité hospitalière en France métropolitaine + Corse")
-st.markdown("### Taux de recours aux établissements de santé")
+with st.expander("ℹ️ **À propos du projet et des données**", expanded=False):
+    st.markdown("""
+    #### Source des données
+    
+    Les jeux de données étudiés proviennent de l'**Agence Technique de l'Information sur l'Hospitalisation (ATIH)** 
+    et sont publiés par la **Direction de la Recherche, des Études, de l'Évaluation et des Statistiques (DREES)**. 
+    Ils concernent la morbidité hospitalière dans les établissements de soins de courte durée en France métropolitaine 
+    entre **2018 et 2022**.
+    
+    #### Structure des données utilisées
+    
+    - **Tableau 1** (`tableau_1.csv`) : ~**3,9 millions** d'observations réparties sur trois niveaux géographiques 
+      (national, régional, départemental)
+    - **Tableau 2** (`tableau_2.csv`) : ~**1 million** d'observations sur la durée des séjours
+    - **Variables clés** : pathologie, sexe, âge (total et tranches), année, nombre de recours, durée des séjours
+    
+    #### Traitement appliqué
+    
+    Le traitement (éffectué dans traitement.ipynb) procède à un **filtrage systématique** des données en :
+    - Séparant les trois niveaux géographiques
+    - Excluant les **DOM-TOM** et les lignes de **totaux agrégés**
+    - Conservant uniquement les **départements métropolitains**
+    
+    **Deux dataframes principaux** sont créés à partir du tableau 1 :
+    - `df_tot_age` : regroupe tous les âges en **différenciant les sexes**
+    - `df_tranch_age` : présente les données par **tranche d'âge** sans distinction de sexe
+    
+    #### Gestion des valeurs manquantes
+    
+    Les valeurs manquantes (marquées **"ND"** dans les données brutes) ont été traitées en appliquant une 
+    **moyenne calculée** par département, sexe ou tranche d'âge selon le cas, et pathologie, en utilisant 
+    les années disponibles pour chaque groupe.
+    
+    #### Variables dérivées
+    
+    Le traitement inclut aussi la création de variables dérivées, et des calculus:
+    - Extraction des **codes départementaux** et des **noms de pathologies** épurés
+    - Calcul de variables dérivées : **total des cas** par groupe et **ratios** (par sexe ou tranche d'âge)
+    - Transformation du **format large → format long** pour `df_sejour` (durée des séjours)
+    
+    Les trois dataframes finaux (`df_tot_age`, `df_tranch_age`, `df_sejour`) sont exportés en format CSV 
+    pour être utilisés dans cette application Streamlit.
+    """)
+
+with st.expander("🔍 **Comparaison : Données originales vs. transformées**", expanded=False):
+    st.markdown("#### Tableau 1 : Taux de recours aux établissements MCO")
+    
+    # Original data displayed full width
+    st.markdown("**📁 Données ORIGINALES** (`tableau_1.csv`)")
+    st.dataframe(df_tableau_1.head(3), use_container_width=True)
+    st.caption(f"📊 {len(df_tableau_1):,} lignes × {len(df_tableau_1.columns)} colonnes")
+    st.caption("✓ 3 niveaux géo | ✓ DOM-TOM | ✓ 'Ensemble' sexe | ✓ Valeurs 'ND'")
+    
+    st.markdown("---")
+    
+    # Transformed data in two columns
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**🟢 Données TRANSFORMÉES** (`df_tot_age.csv`)")
+        st.dataframe(df_tot_age.head(3), use_container_width=True)
+        st.caption(f"📊 {len(df_tot_age):,} lignes × {len(df_tot_age.columns)} colonnes")
+        st.caption("✅ Départements uniquement | ✅ M/F séparés | ✅ NaN imputés | ✅ Ratios ajoutés")
+    
+    with col2:
+        st.markdown("**🟢 Données TRANSFORMÉES** (`df_tranch_age.csv`)")
+        st.dataframe(df_tranch_age.head(3), use_container_width=True)
+        st.caption(f"📊 {len(df_tranch_age):,} lignes × {len(df_tranch_age.columns)} colonnes")
+        st.caption("✅ Tranches d'âge isolées | ✅ 'Ensemble' sexe uniquement")
+    
+    st.markdown("---")
+    st.markdown("#### Tableau 2 : Durée des séjours hospitaliers")
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        st.markdown("**📁 Données ORIGINALES** (`tableau_2.csv` - format large)")
+        st.dataframe(df_tableau_2.head(3), use_container_width=True)
+        st.caption(f"📊 {len(df_tableau_2):,} lignes × {len(df_tableau_2.columns)} colonnes")
+        st.caption(" Une colonne par durée ('<24h', '1 jour', '2 jours'...)")
+    
+    with col4:
+        st.markdown("** Données TRANSFORMÉES** (`df_sejour.csv` - format long)")
+        st.dataframe(df_sejour.head(3), use_container_width=True)
+        st.caption(f"📊 {len(df_sejour):,} lignes × {len(df_sejour.columns)} colonnes")
+        st.caption(" Format long (une ligne par durée) |  Ratio ajouté |  Durée_num")
+
 st.markdown("---")
 
 # =============================
@@ -331,7 +427,6 @@ elif chart_option == "Répartition par âge (France entière)":
         (df_tranch_age["Pathologie"] == pathologie_selected) &
         (df_tranch_age["ANNEE"] == year_selected)
     ].groupby("Tranche d'age")["nbr recours"].sum().reset_index()
-
     df_age["pct"] = (df_age["nbr recours"] / df_age["nbr recours"].sum() * 100).round(1)
 
     fig = px.bar(
@@ -364,3 +459,137 @@ elif chart_option == "Total par département":
     )
     fig.update_xaxes(tickangle=45)
     st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# WORDCLOUD
+# -----------------------------
+
+# Chargement du modèle français de spaCy. Modèle md qui est plus précis pour la lemmatisation et la reconnaissance des mots
+nlp = spacy.load("fr_core_news_md")
+
+# Article de presse provenant de https://www.lesechos.fr/economie-france/social/cinq-ans-apres-le-covid-lactivite-hospitaliere-retrouve-des-couleurs-2154382
+article = """
+Cinq ans après le Covid, l'activité hospitalière « retrouve des couleurs »
+Le nombre de séjours à l'hôpital a augmenté de 3,7 % en 2024, selon le baromètre annuel de la Fédération hospitalière de France, permettant de résorber une partie du retard pris pendant la crise sanitaire.
+L'activité hospitalière « retrouve des couleurs ». Dans la deuxième édition de son baromètre sur l'accès aux soins publiée ce lundi, cinq ans jour pour jour après l'entrée en vigueur du premier confinement pour faire face à l'épidémie de Covid, la Fédération hospitalière de France (FHF) estime qu'il y a eu 516.000 séjours à l'hôpital de plus qu'attendu en 2024.
+Le nombre de séjours hospitaliers a augmenté de 3,7 %, et même de 4,6 % à l'hôpital public. Pour la première fois depuis 2020, « la dette de santé publique commence à se résorber », s'est félicité son président, Arnaud Robinet.
+Entre 2019 et 2023, compte tenu notamment des perturbations liées au Covid, quelque 3,5 millions de séjours hospitaliers n'avaient pas pu être réalisés. Une situation qui serait synonyme de retard dans la prise en charge de certains cancers et du suivi des personnes âgées. La reprise constatée l'an dernier concerne toutes les classes d'âges à l'exception des plus de 85 ans qui continuent d'être en situation de sous recours (-6 % par rapport aux niveaux attendus).
+
+Un retard important dans les chirurgies lourdes
+Certaines disciplines, comme la neurologie, la rhumatologie, le cardio-vasculaire ou les prises en charge digestives restent cependant en difficulté. « Elles représentent un tiers des activités de médecine, pour un total de 180.000 séjours non réalisés », a indiqué la FHF. Un sous-recours est également constaté pour les chirurgies lourdes pour toutes les classes d'âges confondues. « Ce sont en tout 700.000 séjours de chirurgie qui n'ont pas été réalisés depuis 2020 », a-t-elle également alerté.
+Autre point positif, dans son baromètre, la FHF constate que 37 % d'hôpitaux se sont déclarés « en tension » en 2024, soit une quarantaine de moins que l'année précédente. Ils sont également une cinquantaine d'hôpitaux en moins à avoir déclenché des plans blancs, ce protocole prévu par les autorités de santé pour faire face à ces situations exceptionnelles. Le rythme des fermetures de lits diminue aussi et de nombreux établissements anticipent des réouvertures dans certains secteurs en 2025.
+
+« Tous les voyants sont au rouge écarlate »
+Pour autant, « cette amorce de rémission n'efface pas la dégradation continue de l'accès aux soins des dernières années », a prévenu Arnaud Robinet. Le président de la FHF a notamment rappelé que « sur le plan financier, à l'hôpital comme dans les Ehpad publics, tous les voyants sont au rouge écarlate », avec un déficit atteignant 2,8 milliards d'euros fin 2024. Et l'accès aux soins se dégrade : selon un sondage Ipsos commandé par la FHF, plus de deux tiers des répondants déclarent avoir renoncé à au moins un acte de soins ces cinq dernières années. Deux sur trois (65 %) disent aussi « avoir peur d'être hospitalisés » au vu de la situation actuelle.
+« Nous sommes à un tournant […], ou bien nous changeons de logiciel pour se donner les moyens d'amplifier la reprise », ou nous risquons « de voir notre système de santé s'affaiblir encore davantage », a-t-il averti.
+En matière de financement, celui qui est aussi le maire (Horizons) de Reims a appelé l'Etat à soutenir cette « reprise ». Il propose la création d'un « Livret H », sur le modèle du Livret A utilisé pour le logement social. Ou encore un fonds vert destiné uniquement aux hôpitaux. Il remettra « aux pouvoirs publics en mai un cadre de loi de programmation en santé » car « le besoin d'une planification en santé n'a jamais été aussi urgent. »
+"""
+
+# Fonction d'anonymisation basée sur spaCy
+# La variable 'nlp' est chargée dans le Bloc 1
+def anonymiser(texte):
+    # Traitement du texte par le modèle spaCy (MD)
+    doc = nlp(texte)
+    resultat = texte
+    
+    # Remplacement de toutes les entités de type 'PER' (Personne)
+    for ent in doc.ents:
+        if ent.label_ == "PER":
+            # Utilise la méthode de remplacement classique sur le texte original
+            resultat = resultat.replace(ent.text, "nom_prenom")
+            
+    return resultat
+
+# Application de l'anonymisation sur l'article
+text_names_replaced = anonymiser(article) 
+
+# On retire la chaîne de caractères "nom_prenom" car elle nous intéresse pas
+text_names_replaced = text_names_replaced.replace('nom_prenom', '')
+
+# Mise en minuscule
+text_lower = text_names_replaced.lower()
+
+# Variable contenant les accents
+text_with_accents = text_lower
+
+# Suppression des nombres (car ils sont très présents et, si nous les avions remplacés par 'annee' (ou 'nombre'), ces mots seraient devenu les plus 
+# fréquents du texte, apparaissant en très grand dans le WordCloud)
+text_no_numbers = re.sub(r'[0-9]+', '', text_with_accents)
+
+# Suppression de la ponctuation et caractères spéciaux (ne garder que les lettres a-z) (SAUF les accents)
+# Le motif mis à jour autorise toutes les lettres minuscules (a-z) ET les accents français communs.
+text_clean_chars = re.sub(r'[^a-zàâéèêëïîôöùûüÿçœæ\s]', ' ', text_no_numbers)
+
+# Suppression des espaces multiples créés par les remplacements précédents
+text_clean = re.sub(r'\s+', ' ', text_clean_chars).strip()
+
+# Tokenisation et Filtrage par Catégorie Grammaticale (POS)
+
+# Traitement du texte nettoyé avec spaCy (text_clean contient les accents)
+doc = nlp(text_clean)
+
+# Liste des POS tags (catégories grammaticales) à CONSERVER
+# On cible uniquement les Noms Communs et les Adjectifs
+pos_to_keep = {'NOUN', 'ADJ'} # Noms Propres (PROPN) sont retirés ici
+
+# Liste des stopwords de spaCy
+final_stop_words = set(nlp.Defaults.stop_words) 
+
+# Filtrage : le token est un mot-clé (NOUN/ADJ) ET n'est pas un stopword ET a plus de 3 lettres
+tokens_filtered_for_lemmatization = []
+for token in doc:
+    token_text = token.text
+    
+    # Le filtre POS est appliqué
+    if (token_text not in final_stop_words and 
+        len(token_text) > 3 and 
+        token.pos_ in pos_to_keep):
+        
+        tokens_filtered_for_lemmatization.append(token_text)
+
+# Lemmatisation
+
+# Permet à spaCy de traiter la séquence (qui contient les accents)
+text_for_lemmatization = " ".join(tokens_filtered_for_lemmatization)
+
+# Traitement du texte avec spaCy
+doc_lemmatized = nlp(text_for_lemmatization)
+
+# Extraction du lemme pour chaque token
+tokens_lemmatized_raw = [token.lemma_ for token in doc_lemmatized]
+
+# Normalisation (retrait des accents) des lemmes pour le WordCloud
+tokens_lemmatized = [unidecode(word) for word in tokens_lemmatized_raw]
+
+# Dictionnaire de fréquences
+freq = defaultdict(int)
+for word in tokens_lemmatized:
+    freq[word] += 1
+
+# Tri par fréquence décroissante pour afficher le Top 10
+sorted_freq = dict(sorted(freq.items(), key=lambda x: x[1], reverse=True))
+
+count = 0
+for k, v in sorted_freq.items():
+    count += 1
+    if count == 10: break
+
+# Création du WordCloud
+wordcloud = WordCloud(
+    width=800, 
+    height=400, 
+    background_color='white', 
+    colormap='viridis',          
+    max_words=13,    # Limité à 13 mots          
+    min_font_size=10,         
+    random_state=42           
+).generate_from_frequencies(freq)
+
+st.markdown("---")
+st.header("4️⃣ WordCloud")
+
+# Conversion en image pour Streamlit
+image = wordcloud.to_image()
+
+# Affichage avec taille contrôlée
+st.image(image, width=700)

@@ -21,7 +21,6 @@ L’étude vise à explorer les hospitalisations en fonction :
 - de la **durée des séjours**
 
 Les résultats sont intégrés dans une **application interactive Streamlit** permettant d’explorer les données de manière visuelle, dynamique et intuitive (filtres, clic sur la carte, animations temporelles, etc.).
-
 ---
 
 ## 🗂️ Source des données

@@ -77,10 +77,10 @@ fig_map = px.choropleth(
     locations="dep_code",
     animation_frame="ANNEE",
     featureidkey="properties.code",
-    color="nbr recours",
+    color="total cas",
     color_continuous_scale="Blues",
-    range_color=(0, df_map["nbr recours"].max()),
-    labels={"nbr recours": "Taux de recours"},
+    range_color=(0, df_map["total cas"].max()),
+    labels={"total cas": "Taux de recours"},
     hover_name="Département",
     hover_data={"Pathologie": True, "Département": False}
 )
@@ -124,15 +124,17 @@ if selected_dept and selected_dept != "-- Aucun --":
     # Sex distribution
     with col1:
         if not df_tot_age_filt.empty:
-            df_sex = df_tot_age_filt.groupby("SEXE")["nbr recours"].sum().reset_index()
-            df_sex['pct'] = (df_sex['nbr recours'] / df_sex['nbr recours'].sum() * 100).round(1)
+
             
             fig_sex = px.bar(
-                df_sex, x='SEXE', y='nbr recours', color='SEXE', text='pct',
+                df_tot_age_filt,
+                x='SEXE',
+                y='nbr recours',
+                color='SEXE', text='ratio par sexe',
                 color_discrete_map={"Homme": "#318CE7", "Femme": "#DE3163"},
                 title="Répartition par sexe sur toute la France"
             )
-            y_range_sejour = df_sex["nbr recours"].max() * 1.1
+            y_range_sejour = df_tot_age_filt["nbr recours"].max() * 1.2
 
             fig_sex.update_traces(texttemplate='%{text:.1f}%', textposition='outside', width=0.3)
             fig_sex.update_layout(showlegend=False)
@@ -148,17 +150,28 @@ if selected_dept and selected_dept != "-- Aucun --":
         ]
         
         if not df_tranch_filt.empty:
-            df_age = df_tranch_filt.groupby("Tranche d'age")["nbr recours"].sum().reset_index()
-            df_age['pct'] = (df_age['nbr recours'] / df_age['nbr recours'].sum() * 100).round(1)
             
+
             fig_age = px.bar(
-                df_age, x="Tranche d'age", y='nbr recours',
-                color="Tranche d'age", text='pct',
+                df_tranch_filt, 
+                x="Tranche d'age", 
+                y='nbr recours',
+                color="Tranche d'age", 
+                text='ratio par tranche d\'age',
+                barmode='group', 
                 title="Répartition par tranche d'âge"
             )
-            fig_age.update_yaxes(title_text='nbr recours %')
-            fig_age.update_traces(texttemplate='%{text:.1f}%', textposition='outside', width=1)
-            fig_age.update_yaxes(range=[0, df_age['nbr recours'].max() * 1.15])
+
+            fig_age.update_yaxes(
+                title_text='nbr recours %',
+                range=[0, df_tranch_filt['nbr recours'].max() * 1.15]
+                )
+            
+            fig_age.update_traces(
+                texttemplate='%{text:.1f}%', 
+                textposition='outside', width=1
+                )
+            
             fig_age.update_layout(showlegend=False)
             st.plotly_chart(fig_age, use_container_width=True)
         else:
@@ -190,14 +203,28 @@ if selected_dept and selected_dept != "-- Aucun --":
     if not df_sejour_filt.empty:
         with col3:
             fig_sejour = px.bar(
-                df_sejour_filt, x="Durée séjour", y="Nombre séjours",
-                color="Durée séjour", text="ratio durée du séjour",
+                df_sejour_filt, 
+                x="Durée séjour", 
+                y="Nombre séjours",
+                color="Durée séjour", 
+                text="ratio durée du séjour",
                 labels={"Nombre séjours": "Répartition (%)", "Durée séjour": "Durée des séjours (jours)"},
                 title="Distribution durée du séjour"
             )
-            fig_sejour.update_traces(texttemplate='%{text:.1f}%', textposition='outside', width=1)
+
+            fig_sejour.update_yaxes(
+                range=[0, df_sejour_filt['Nombre séjours'].max() * 1.2]
+                )
+            
+            fig_sejour.update_traces(
+                texttemplate='%{text:.1f}%', 
+                textposition='outside', width=1
+                )
+            
             fig_sejour.update_layout(height=450, showlegend=False)
             st.plotly_chart(fig_sejour, use_container_width=True)
+
+
         with col4:
             x = df_sejour_filt["Durée_num"]
             w = df_sejour_filt["Nombre séjours"]
@@ -283,6 +310,7 @@ if chart_option == "Répartition par sexe (France entière)":
         (df_tot_age["Pathologie"] == pathologie_selected) &
         (df_tot_age["ANNEE"] == year_selected)
     ].groupby("SEXE")["nbr recours"].sum().reset_index()
+    
     df_sex["pct"] = (df_sex["nbr recours"] / df_sex["nbr recours"].sum() * 100).round(1)
 
     fig = px.bar(
@@ -290,7 +318,7 @@ if chart_option == "Répartition par sexe (France entière)":
         labels={"nbr recours": "Nombre de cas"},
         color_discrete_map={"Homme": "#318CE7", "Femme": "#DE3163"}
     )
-    fig.update_traces(texttemplate='%{text:.1f}%', textposition="outside")
+    fig.update_traces(texttemplate='%{text:.1f}%', textposition="outside", width=0.3)
     st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
@@ -303,6 +331,7 @@ elif chart_option == "Répartition par âge (France entière)":
         (df_tranch_age["Pathologie"] == pathologie_selected) &
         (df_tranch_age["ANNEE"] == year_selected)
     ].groupby("Tranche d'age")["nbr recours"].sum().reset_index()
+
     df_age["pct"] = (df_age["nbr recours"] / df_age["nbr recours"].sum() * 100).round(1)
 
     fig = px.bar(
@@ -310,9 +339,12 @@ elif chart_option == "Répartition par âge (France entière)":
         color="Tranche d'age", text="pct",
         labels={"nbr recours": "Nombre de cas"}
     )
+
     fig.update_traces(texttemplate='%{text:.1f}%', textposition="outside", width=0.7)
     fig.update_layout(showlegend=False)
+
     st.plotly_chart(fig, use_container_width=True)
+
 
 # -----------------------------
 # TOTAL BY DEPARTMENT

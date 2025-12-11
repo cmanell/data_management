@@ -3,7 +3,7 @@
 
 ### 👥 Collaborateurs
 - **Cédric MANELLI**
-- _(à compléter)_
+- **Sufyan NADAT**
 - _(à compléter)_
 
 ---

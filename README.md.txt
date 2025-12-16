@@ -1,115 +1,69 @@
-# 🏥 Analyse des morbidités hospitalières en France  
-### 📊 Projet collaboratif – Data Management & Application interactive (Python – Streamlit)
+# Projet collaboratif - Data management Python
 
-### 👥 Collaborateurs
-- **Cédric MANELLI**
-- _(à compléter)_
-- _(à compléter)_
+Collaborateurs:
 
----
+- Sufyan Nadat
+- Jacques Allison
+- Cédric MANELLI
 
-## 📌 Description du projet
+## Description
 
-Ce projet a pour objectif d’analyser les **taux de recours aux établissements de santé en France** à partir des données de **morbidité hospitalière (MCO)**.  
-L’étude vise à explorer les hospitalisations en fonction :
-
-- des **pathologies**
-- du **sexe**
-- des **tranches d’âge**
-- de l’**année**
-- du **département**
-- de la **durée des séjours**
-
-Les résultats sont intégrés dans une **application interactive Streamlit** permettant d’explorer les données de manière visuelle, dynamique et intuitive (filtres, clic sur la carte, animations temporelles, etc.).
----
-
-## 🗂️ Source des données
-
-📎 **Morbidité hospitalière (MCO)** – Produite par l’**ATIH** et publiée par la **DREES**  
-🔗 https://www.data.gouv.fr/api/1/datasets/r/adba3d85-ad73-41d9-b152-e0f3f8153db5
-
-📆 **Période étudiée : 2018 → 2022**  
-🌍 **Échelle : national → régional → départemental (France métropolitaine)**  
-📄 **Formats disponibles : CSV, JSON, Parquet**
-
-### 📍 Description officielle
-
-Les données portent sur les hospitalisations en **soins de courte durée (MCO)**.  
-La dataviz officielle propose 3 tableaux :
-
-1. **Répartition des séjours** selon le sexe, l’âge et la pathologie traitée  
-2. **Durée des séjours et durée moyenne** selon la pathologie  
-3. **Taux de recours** selon le sexe, l’âge et la pathologie
+Ce projet a pour objectif d’analyser les **taux de recours aux établissements de santé en France** à partir des données de morbidité hospitalière, puis de proposer une **application interactive Streamlit** permettant d’explorer les résultats par pathologie, département, année, sexe et tranche d’âge.   
 
 ---
 
-## 🎯 Objectifs du projet
+## Source des données
 
-### 🔎 1) Exploration & Préparation
-- Compréhension de la structure de la base
-- Nettoyage :  
-  - gestion des valeurs manquantes (moyenne locale)
-  - conversions de types
-  - harmonisation des pathologies
-  - extraction de `dep_code` (incluant Corse **2A/2B**)
-- Sélection des dimensions pertinentes : sexe, âge, pathologie, durée, géographie, temporalité…
+**Base utilisée : Morbidité hospitalière (MCO)**  
+URL : https://www.data.gouv.fr/api/1/datasets/r/adba3d85-ad73-41d9-b152-e0f3f8153db5
 
-### 🧮 2) Agrégations & Calculs avancés
-Création de plusieurs jeux de données :
+### Description officielle
 
-| Dataset | Contenu |
-|---------|--------|
-| `df_tot_age.csv` | Agrégations par sexe, pathologie, année, département |
-| `df_tranch_age.csv` | Agrégations par tranche d’âge |
-| `df_sejour.csv` | Analyse des durées de séjour |
+Il s'agit des données sur les hospitalisations en court séjour survenues entre 2018 et 2022.  
+Ces tableaux ont été réalisés à partir des données hospitalières (PMSI MCO) produites par l’Agence technique de l’information sur l’hospitalisation (ATIH).  
 
-🔢 Calculs statistiques intégrés :
-- **Ratio Homme / Femme**
-- **Pourcentage par tranche d’âge**
-- Conversion en durée numérique (`Durée_num`)
-- **Moyennes et écarts-types pondérés**
+Ils complètent la série de données annuelles mises à disposition sur le site data.Drees depuis 2010, pouvant être déclinés au niveau :
 
-#### 📌 Formules utilisées
+- national  
+- régional  
+- départemental  
 
-Moyenne pondérée :
-\[
-\mu = \frac{\sum w_i x_i}{\sum w_i}
-\]
+La dataviz d’origine propose 3 tableaux :
 
-Écart-type pondéré :
-\[
-\sigma = \sqrt{\frac{\sum w_i (x_i - \mu)^2}{\sum w_i}}
-\]
+1. Répartition des séjours dans les établissements de soins de courte durée (MCO) selon le sexe, l’âge des patients et la pathologie traitée  
+2. Répartition des séjours dans les établissements de soins de courte durée (MCO) selon la durée du séjour et la pathologie traitée, et durée moyenne de séjour  
+3. Taux de recours aux établissements de soins de courte durée (MCO) selon le sexe, l’âge des patients et la pathologie traitée  
 
-💡 Ces résultats sont utilisés pour tracer une **distribution normale théorique** superposée aux données réelles.
+Les données sont disponibles en CSV, JSON et Parquet.  
 
 ---
 
-## 🖥 Application Streamlit interactive
+## Objectifs du projet
 
-### 🗺 Carte choroplèthe dynamique
-- Visualisation par **département**
-- Filtre par **pathologie**
-- Animation **par année**
-- Clic sur un département → **affichage des analyses dédiées**
+1. **Exploration et préparation des données**  
+   - Comprendre la structure de la base (dimensions, dictionnaire des variables)  
+   - Identifier les axes d’analyse pertinents : pathologie, âge, sexe, département, année…  
+   - Nettoyer les données (valeurs manquantes, types, filtrage)  
 
-### 📊 Analyses proposées
+2. **Construction de tables agrégées**  
+   - Création de jeux de données intermédiaires pour l’analyse :  
+     - `df_tot_age.csv` : agrégations par département, pathologie, sexe, année, etc.  
+     - `df_tranch_age.csv` : agrégations par tranches d’âge, département, pathologie, année, etc.  
 
-| Analyse | Description |
-|---------|-------------|
-| 📉 Durée des séjours | Histogrammes + **courbe de Gauss (µ & σ)** |
-| 🚻 Répartition par sexe | Barres comparatives + **ratio affiché** |
-| 👶👵 Répartition par tranche d’âge | Histogramme + **pourcentages** |
-| 🗺 Évolution géographique | Carte animée (département) |
+3. **Mise en place d’une application Streamlit interactive**  
+   - Visualisation cartographique des taux de recours par **département**  
+   - Exploration détaillée par **sexe** et **tranches d’âge** pour une pathologie donnée  
+   - Interaction via clic sur la carte + filtres dans l’interface. :contentReference[oaicite:1]{index=1}  
 
 ---
 
-## ⚙️ Installation
+## Structure du projet
 
-### 🧰 Prérequis
-- Python **3.10+**
-- `pip` ou `conda`
-
-### 📦 Installation des dépendances
-```bash
-pip install -r requirements.txt
+```text
+.
+├── appli_data.py        # Application Streamlit (visualisation interactive)
+├── traitement.ipynb     # Notebook de préparation et d’exploration des données
+├── df_tot_age.csv       # Données agrégées par pathologie / sexe / départements / année
+├── df_tranch_age.csv    # Données agrégées par tranches d’âge / départements / année
+├── departements.geojson # Polygones des départements français (pour la carte choroplèthe)
+└── README.md            # Présentation du projet (ce fichier)
